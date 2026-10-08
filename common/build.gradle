@@ -86,3 +86,22 @@ sourceSets.configureEach {
         }
     }
 }
+
+// Pure catalog tests also run without Minecraft, ONNX or a GPU. The same sources
+// are compiled into the mod; this is not a second/offline implementation.
+def catalogTestClasses = layout.buildDirectory.dir('catalog-test-classes')
+tasks.register('compileCatalogTests', JavaCompile) {
+    source fileTree('src/main/java/com/github/xandergos/terraindiffusionmc/catalog') { include '*.java' }
+    source fileTree('src/test/java/com/github/xandergos/terraindiffusionmc/catalog')
+    classpath = files()
+    destinationDirectory = catalogTestClasses
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+    options.release = 21
+}
+tasks.register('catalogTest', JavaExec) {
+    dependsOn 'compileCatalogTests'
+    classpath = files(catalogTestClasses)
+    mainClass = 'com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalogTest'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn 'catalogTest' }

@@ -1,9 +1,8 @@
 plugins {
     // see https://fabricmc.net/develop/ for new versions
-    id 'fabric-loom' version '1.13-SNAPSHOT' apply false
+    id 'fabric-loom' version '1.13.6' apply false
     // see https://projects.neoforged.net/neoforged/moddevgradle for new versions
     id 'net.neoforged.moddev' version '2.0.123' apply false
-    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT' apply false
 }
 
 ext {
@@ -217,6 +216,10 @@ tasks.register('collectReleaseJars', Copy) {
 }
 
 subprojects { subproject ->
+    subproject.tasks.withType(AbstractArchiveTask).configureEach {
+        preserveFileTimestamps = false
+        reproducibleFileOrder = true
+    }
     subproject.plugins.withType(org.gradle.api.plugins.JavaPlugin).configureEach {
         subproject.extensions.configure(org.gradle.api.plugins.JavaPluginExtension) { JavaPluginExtension javaExtension ->
             def javaVersion = JavaVersion.toVersion(terrainDiffusionJavaVersion)
