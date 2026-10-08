@@ -11,6 +11,12 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.TagsUpdatedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.fml.ModList;
+import com.github.xandergos.terraindiffusionmc.catalog.minecraft.BiomeCatalogRuntime;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +35,9 @@ public class TerrainDiffusionMc {
         NeoForge.EVENT_BUS.addListener(this::onLevelLoad);
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
+        NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
+        NeoForge.EVENT_BUS.addListener(this::onServerStopped);
+        NeoForge.EVENT_BUS.addListener(this::onTagsUpdated);
     }
 
     private void onRegister(RegisterEvent event) {
@@ -56,5 +65,19 @@ public class TerrainDiffusionMc {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         TerrainDiffusionLifecycle.registerCommands(event.getDispatcher());
+    }
+
+    private void onAddReloadListeners(AddReloadListenerEvent event) {
+        event.addListener(BiomeCatalogRuntime.listener(event.getRegistryAccess(), ModList.get().getMods().stream()
+            .map(info -> info.getModId()).collect(Collectors.toSet())));
+    }
+
+    private void onServerStopped(ServerStoppedEvent event) {
+        BiomeCatalogRuntime.release(event.getServer().registryAccess());
+    }
+
+    private void onTagsUpdated(TagsUpdatedEvent event) {
+        if (event.getUpdateCause() == TagsUpdatedEvent.UpdateCause.SERVER_DATA_LOAD)
+            BiomeCatalogRuntime.activate(event.getRegistryAccess());
     }
 }
