@@ -163,22 +163,30 @@ Needs **JDK 21**. Newer JDKs fail in `buildSrc` with `Unsupported class file maj
 
 An internet connection is required during the build to fetch the pinned model manifest metadata from Hugging Face.
 
-The `-windows` build needs `libs/onnxruntime-dml.jar`, which ships in the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build it yourself.
+The `-windows` build needs `libs/onnxruntime-dml.jar`. Run `scripts/bootstrap-dml.ps1`
+to extract the exact dependency from the checksum-pinned original Windows release.
 
 ### Build tasks
 
 Use `Windows` when you want the DirectML build. The old `Dml` names still work as aliases.
 
+NeoForge is the supported default: ordinary commands include `common` and
+`neoforge`, and do not configure Fabric Loom. Add `-PincludeFabric=true` to
+explicitly include Fabric and expose its build tasks. Fabric opt-in retains its
+existing verified-cache requirement; newly generated layered-mappings ZIP
+timestamps are not deterministic. See [build-input verification](docs/build-input-verification.md).
+
 | What you want                       | Command                          |
 |-------------------------------------|----------------------------------|
-| Fabric + NeoForge, Windows/DirectML | `./gradlew buildWindows`         |
-| Fabric + NeoForge, CUDA             | `./gradlew buildCuda`            |
-| Fabric + NeoForge, CPU/CoreML       | `./gradlew buildCpu`             |
-| Every loader and every variant      | `./gradlew buildRelease`         |
-| Fabric only, Windows/DirectML       | `./gradlew buildFabricWindows`   |
-| Fabric only, CUDA                   | `./gradlew buildFabricCuda`      |
-| Fabric only, CPU/CoreML             | `./gradlew buildFabricCpu`       |
-| Every Fabric variant                | `./gradlew buildFabricAll`       |
+| NeoForge, Windows/DirectML          | `./gradlew buildWindows`         |
+| NeoForge, CUDA                     | `./gradlew buildCuda`            |
+| NeoForge, CPU/CoreML               | `./gradlew buildCpu`             |
+| Every enabled loader and variant   | `./gradlew buildRelease`         |
+| Fabric + NeoForge, Windows/DirectML | `./gradlew buildWindows -PincludeFabric=true` |
+| Fabric only, Windows/DirectML       | `./gradlew buildFabricWindows -PincludeFabric=true` |
+| Fabric only, CUDA                  | `./gradlew buildFabricCuda -PincludeFabric=true` |
+| Fabric only, CPU/CoreML            | `./gradlew buildFabricCpu -PincludeFabric=true` |
+| Every Fabric variant              | `./gradlew buildFabricAll -PincludeFabric=true` |
 | NeoForge only, Windows/DirectML     | `./gradlew buildNeoForgeWindows` |
 | NeoForge only, CUDA                 | `./gradlew buildNeoForgeCuda`    |
 | NeoForge only, CPU/CoreML           | `./gradlew buildNeoForgeCpu`     |
@@ -190,7 +198,7 @@ The direct property form still works:
 ./gradlew build -PuseDml=true
 ./gradlew build -PuseCuda=true
 ./gradlew build -PuseCpu=true
-./gradlew :fabric:build -PuseDml=true
+./gradlew :fabric:build -PincludeFabric=true -PuseDml=true
 ./gradlew :neoforge:build -PuseDml=true
 ```
 
@@ -198,7 +206,7 @@ Aliases kept for existing scripts:
 
 ```
 ./gradlew buildDml
-./gradlew buildFabricDml
+./gradlew buildFabricDml -PincludeFabric=true
 ./gradlew buildNeoForgeDml
 ./gradlew buildAll
 ```
@@ -217,13 +225,14 @@ build/release/fabric/
 build/release/neoforge/
 ```
 
-To cut a full release, run both:
+To cut a NeoForge release, run:
 
 ```
 ./gradlew buildRelease collectReleaseJars
 ```
 
-That produces the six jars that go on a release, and takes a few minutes most of it spent on the two CUDA jars:
+That produces the three NeoForge variants. To include all six historical loader
+variants, explicitly opt in with `./gradlew buildRelease collectReleaseJars -PincludeFabric=true`:
 
 ```
 build/release/fabric/

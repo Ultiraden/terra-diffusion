@@ -49,10 +49,13 @@ tests live in the pack's `scripts/test-catalog-runtime.cjs`; its test-only probe
 injects an unrelated listener failure and queries published state. It is never
 included in ordinary profiles or this distributable JAR.
 
-Builds use pinned Gradle 8.14.3, Loom 1.13.6, ModDevGradle 2.0.123, SHA-256 dependency
+Default NeoForge builds use pinned Gradle 8.14.3, ModDevGradle 2.0.123, SHA-256 dependency
 verification and deterministic archive order/timestamps. `scripts/bootstrap-dml.ps1`
 extracts the exact SHA-256 DirectML dependency from the checksum-pinned original TD
 Windows release. The pack's source lock pins the accepted commit, Temurin runtime
 patch and final Windows/CUDA artifact SHA-512 values. Run its build script with the
 recorded JDK; arbitrary JDK 21 patches are not claimed byte-identical. Verification
 fails if remote dependency inputs drift instead of silently accepting them.
+Fabric and pinned Loom 1.13.6 require explicit `-PincludeFabric=true`; see
+[build-input verification](build-input-verification.md) for the existing fresh
+generated-mappings limitation and verified-cache scope.
