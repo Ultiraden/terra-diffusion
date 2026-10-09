@@ -9,6 +9,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
@@ -32,6 +33,7 @@ public class TerrainDiffusionMc {
         TerrainDiffusionLifecycle.bootstrap(FMLPaths.CONFIGDIR.get(), FMLPaths.GAMEDIR.get());
 
         NeoForge.EVENT_BUS.addListener(this::onServerStarting);
+        NeoForge.EVENT_BUS.addListener(this::onServerAboutToStart);
         NeoForge.EVENT_BUS.addListener(this::onLevelLoad);
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
@@ -53,9 +55,15 @@ public class TerrainDiffusionMc {
         TerrainDiffusionLifecycle.onServerStarting();
     }
 
+    private void onServerAboutToStart(ServerAboutToStartEvent event) {
+        TerrainDiffusionLifecycle.onServerAboutToStart();
+    }
+
     private void onLevelLoad(LevelEvent.Load event) {
         if (event.getLevel() instanceof ServerLevel world) {
-            TerrainDiffusionLifecycle.onWorldLoad(world);
+            // The registry-owned source exposes legacy unless this world's
+            // successfully published datapack metadata explicitly opts in.
+            TerrainDiffusionLifecycle.onWorldLoad(world,BiomeCatalogRuntime.classificationSource(world.registryAccess()));
         }
     }
 
