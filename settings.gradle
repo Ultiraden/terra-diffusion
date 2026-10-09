@@ -46,5 +46,9 @@ plugins {
 
 rootProject.name = 'terrain-diffusion-mc'
 include('common')
-include('fabric')
 include('neoforge')
+// NeoForge is the supported default. Fabric remains available explicitly; its
+// Loom-generated inputs require the recorded verified Fabric dependency cache.
+if (providers.gradleProperty('includeFabric').map { it.equalsIgnoreCase('true') }.getOrElse(false)) {
+    include('fabric')
+}

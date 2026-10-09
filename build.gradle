@@ -1,12 +1,10 @@
 plugins {
-    // see https://fabricmc.net/develop/ for new versions
-    id 'fabric-loom' version '1.13.6' apply false
     // see https://projects.neoforged.net/neoforged/moddevgradle for new versions
     id 'net.neoforged.moddev' version '2.0.123' apply false
 }
 
 ext {
-    terrainDiffusionLoaderProjects = ['fabric', 'neoforge']
+    terrainDiffusionLoaderProjects = ['fabric', 'neoforge'].findAll { rootProject.findProject(":${it}") != null }
     terrainDiffusionLoaderDisplayNames = [
             fabric  : 'Fabric',
             neoforge: 'NeoForge'
@@ -106,7 +104,8 @@ def terrainDiffusionRegisterBuildExec = { Project ownerProject, String taskName,
         group = terrainDiffusionBuildTaskGroup
         description = descriptionText
         workingDir rootProject.projectDir
-        commandLine(([terrainDiffusionGradlewExecutable.get()] + gradleTasks + [terrainDiffusionVariantPropertyFlag(variant)]) as List<String>)
+        def loaderFlags = rootProject.findProject(':fabric') != null ? ['-PincludeFabric=true'] : []
+        commandLine(([terrainDiffusionGradlewExecutable.get()] + gradleTasks + [terrainDiffusionVariantPropertyFlag(variant)] + loaderFlags) as List<String>)
     }
 }
 
@@ -124,7 +123,7 @@ rootProject.ext.terrainDiffusionBuildVariants.each { String variantKey, Map vari
             "build${variant.taskSuffix}",
             ['build'],
             variant,
-            "Builds Fabric and NeoForge ${variant.displayName} jars."
+            "Builds ${rootProject.ext.terrainDiffusionLoaderProjects.collect { rootProject.ext.terrainDiffusionLoaderDisplayNames[it] }.join(' and ')} ${variant.displayName} jars."
     )
 
     if (variant.legacyTaskSuffix && variant.legacyTaskSuffix != variant.taskSuffix) {
@@ -173,14 +172,15 @@ rootProject.ext.terrainDiffusionLoaderProjects.each { String loaderName ->
 
 tasks.named('buildCuda') { mustRunAfter rootProject.tasks.named('buildCpu') }
 tasks.named('buildWindows') { mustRunAfter rootProject.tasks.named('buildCuda') }
-['Fabric', 'NeoForge'].each { loaderTaskNamePart ->
+rootProject.ext.terrainDiffusionLoaderProjects.each { loaderName ->
+    String loaderTaskNamePart = rootProject.ext.terrainDiffusionLoaderDisplayNames[loaderName]
     tasks.named("build${loaderTaskNamePart}Cuda") { mustRunAfter rootProject.tasks.named("build${loaderTaskNamePart}Cpu") }
     tasks.named("build${loaderTaskNamePart}Windows") { mustRunAfter rootProject.tasks.named("build${loaderTaskNamePart}Cuda") }
 }
 
 tasks.register('buildAllVariants') {
     group = terrainDiffusionBuildTaskGroup
-    description = 'Builds CPU, CUDA, and Windows variants for Fabric and NeoForge.'
+    description = 'Builds CPU, CUDA, and Windows variants for the enabled loaders.'
     dependsOn rootProject.ext.terrainDiffusionLoaderProjects.collect { String loaderName ->
         String loaderDisplayName = rootProject.ext.terrainDiffusionLoaderDisplayNames[loaderName] ?: loaderName.capitalize()
         "build${terrainDiffusionCleanTaskName(loaderDisplayName)}All"
@@ -195,7 +195,7 @@ tasks.register('buildAll') {
 
 tasks.register('buildRelease') {
     group = terrainDiffusionBuildTaskGroup
-    description = 'Builds every release jar for Fabric and NeoForge.'
+    description = 'Builds every release jar for the enabled loaders.'
     dependsOn 'buildAllVariants'
 }
 
