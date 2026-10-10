@@ -1,5 +1,8 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
+import java.util.function.Consumer;
+
 // Rule-based biome classifier port of _classify_biome in minecraft_api.py
 public final class BiomeClassifier {
     // Fixed-seed noise instances (matching Python's module-level _TEMP_NOISE etc.)
@@ -74,6 +77,22 @@ public final class BiomeClassifier {
     public static short[] classify(float[] elev, float[] climate, int i0, int j0,
                                     float[] elevPadded, int H, int W, float pixelSizeM,
                                     byte[] snowLayersOut, boolean[] riverMask) {
+        return classify(elev, climate, i0, j0, elevPadded, H, W, pixelSizeM,
+            snowLayersOut, riverMask, new BiomeCatalog.Snapshot<>(false, java.util.List.of()));
+    }
+
+    public static short[] classify(float[] elev, float[] climate, int i0, int j0,
+                                    float[] elevPadded, int H, int W, float pixelSizeM,
+                                    byte[] snowLayersOut, boolean[] riverMask,
+                                    BiomeCatalog.Snapshot<?> catalog) {
+        return classify(elev,climate,i0,j0,elevPadded,H,W,pixelSizeM,snowLayersOut,riverMask,catalog,ignored -> {});
+    }
+
+    public static short[] classify(float[] elev, float[] climate, int i0, int j0,
+                                    float[] elevPadded, int H, int W, float pixelSizeM,
+                                    byte[] snowLayersOut, boolean[] riverMask,
+                                    BiomeCatalog.Snapshot<?> catalog,
+                                    Consumer<TerralithCatalogBridge.Diagnostics> diagnostics) {
         short[] out = new short[H * W];
         for (int i = 0; i < H * W; i++) out[i] = PLAINS;
 
@@ -109,6 +128,9 @@ public final class BiomeClassifier {
         // Process per-pixel
         TerrainSample sample = new TerrainSample();
         boolean useTerralith = TerralithCompat.isActive();
+        // Failed initial loading remains the explicitly documented legacy path.
+        // A valid empty catalog is active and therefore cannot enable old gates.
+        TerralithCatalogBridge bridge = useTerralith && catalog.active() ? new TerralithCatalogBridge(catalog) : null;
 
         for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
@@ -234,11 +256,11 @@ public final class BiomeClassifier {
 
                 short biome;
                 if (!sample.isOcean && riverMask != null && riverMask[idx]) {
-                    biome = riverBiome(sample, useTerralith);
+                    biome = riverBiome(sample, useTerralith, bridge);
                 } else {
                     biome = TerralithClassifier.NONE;
                     if (useTerralith) {
-                        biome = TerralithClassifier.pick(sample);
+                        biome = bridge == null ? TerralithClassifier.pick(sample) : bridge.pick(sample);
                     }
                     if (biome == TerralithClassifier.NONE) {
                         biome = classifyVanilla(sample);
@@ -251,6 +273,7 @@ public final class BiomeClassifier {
                 }
             }
         }
+        if (bridge != null) diagnostics.accept(bridge.diagnostics());
         return out;
     }
 
@@ -275,8 +298,16 @@ public final class BiomeClassifier {
     private static final float WARM_RIVER_MIN_C = 28f;
 
     private static short riverBiome(TerrainSample s, boolean useTerralith) {
+        return riverBiome(s, useTerralith, null);
+    }
+
+    private static short riverBiome(TerrainSample s, boolean useTerralith, TerralithCatalogBridge bridge) {
         if (s.temp <= -3f) {
             return FROZEN_RIVER;
+        }
+        if (bridge != null) {
+            short warm = bridge.warmRiver(s);
+            return warm == TerralithCatalogBridge.NONE ? RIVER : warm;
         }
         if (useTerralith && s.temp >= WARM_RIVER_MIN_C) {
             return TerralithBiomeIds.WARM_RIVER;

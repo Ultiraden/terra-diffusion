@@ -1,5 +1,8 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
+import com.github.xandergos.terraindiffusionmc.catalog.CatalogSnapshotSource;
+
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
@@ -20,6 +23,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 public final class LocalTerrainProvider {
 
@@ -160,6 +164,10 @@ public final class LocalTerrainProvider {
 
     private static volatile LocalTerrainProvider INSTANCE;
     private static long instanceSeed;
+    private static final CatalogSnapshotSource CATALOG=new CatalogSnapshotSource();
+
+    public static void bindCatalogSnapshotSource(Supplier<? extends BiomeCatalog.Snapshot<?>> supplier) { CATALOG.bind(supplier); }
+    public static void clearCatalogSnapshotSource() { CATALOG.clear(); }
 
     private final WorldPipeline pipeline;
 
@@ -291,11 +299,15 @@ public final class LocalTerrainProvider {
     private PriorityTask<HeightmapData> enqueue(CacheKey key, int i1, int j1, int i2, int j2,
                                                 int priority) {
         int scale = WorldScaleManager.getCurrentScale();
+        // Capture before enqueue, not when the worker eventually starts. A
+        // successful /reload affects later tiles; cached/pending tiles keep
+        // their original immutable classification inputs and existing keys.
+        BiomeCatalog.Snapshot<?> catalog = CATALOG.capture();
         PriorityTask<HeightmapData> task = new PriorityTask<>(() -> {
             long computedWindowCountBefore = pipeline.getTotalComputedWindowCount();
             HeightmapData data = scale <= 1
-                    ? handle1x(i1, j1, i2, j2)
-                    : handleUpsampled(i1, j1, i2, j2, scale);
+                    ? handle1x(i1, j1, i2, j2, catalog)
+                    : handleUpsampled(i1, j1, i2, j2, scale, catalog);
             data.karst = RiverHydrology.karstAt(pipeline, i1 / (float) scale, j1 / (float) scale,
                     NATIVE_RESOLUTION / scale);
             long newlyComputedWindowCount =
@@ -334,7 +346,7 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
+    private HeightmapData handle1x(int i1, int j1, int i2, int j2, BiomeCatalog.Snapshot<?> catalog) {
         int H = i2 - i1, W = j2 - j1;
 
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
@@ -347,11 +359,11 @@ public final class LocalTerrainProvider {
 
         byte[] snowFlat = new byte[H * W];
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W,
-                NATIVE_RESOLUTION, snowFlat, riverMask(waterOut[1]));
+                NATIVE_RESOLUTION, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d));
         return buildHeightmapData(waterOut[0], climate, biomeFlat, snowFlat, waterOut[1], H, W, NATIVE_RESOLUTION);
     }
 
-    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale) {
+    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale, BiomeCatalog.Snapshot<?> catalog) {
         int H = i2 - i1, W = j2 - j1;
         float pixelSizeM = NATIVE_RESOLUTION / scale;
 
@@ -389,8 +401,19 @@ public final class LocalTerrainProvider {
 
         byte[] snowFlat = new byte[H * W];
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W,
-                pixelSizeM, snowFlat, riverMask(waterOut[1]));
+                pixelSizeM, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d));
         return buildHeightmapData(waterOut[0], climate, biomeFlat, snowFlat, waterOut[1], H, W, pixelSizeM);
+    }
+
+    private static void reportCatalogDiagnostics(BiomeCatalog.Snapshot<?> catalog,TerralithCatalogBridge.Diagnostics report) {
+        for (String diagnostic : report.bindings()) if (CATALOG.firstDiagnostic(catalog,"binding:"+diagnostic))
+            LOG.warn("Biome catalog bridge {}",diagnostic);
+        for (String diagnostic : report.unavailableInputs()) if (CATALOG.firstDiagnostic(catalog,"input:"+diagnostic))
+            LOG.warn("Biome catalog bridge {}",diagnostic);
+        for (var failure : report.selectedFailures().entrySet()) if (CATALOG.firstDiagnostic(catalog,"choice:"+failure.getKey()))
+            LOG.warn("Biome catalog selected mapping unavailable: {}; deterministic vanilla fallback ({} columns in reporting tile)",failure.getKey(),failure.getValue());
+        LOG.debug("Biome catalog tile fallback: no_match={}, warm_river_no_match={}, selected_mapping_unavailable={}",
+            report.noMatch(),report.warmRiverNoMatch(),report.selectedMappingUnavailable());
     }
 
     public static float[] addElevationNoise(float[] elevSmooth, float[] elevPadded,

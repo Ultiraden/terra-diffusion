@@ -2,6 +2,7 @@ package com.github.xandergos.terraindiffusionmc;
 
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
+import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
 import com.github.xandergos.terraindiffusionmc.platform.PlatformPaths;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
 import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
@@ -31,6 +32,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.util.List;
+import java.util.function.Supplier;
 
 // Loader-neutral lifecycle and command logic for terrain-diffusion-mc
 public final class TerrainDiffusionLifecycle {
@@ -82,17 +85,29 @@ public final class TerrainDiffusionLifecycle {
         void register(ResourceLocation id, T value);
     }
 
-    // Called by each loader when the server is starting
+    // NeoForge ServerStartingEvent follows loadLevel/world-load. Reset this
+    // binding at the earlier event so it cannot erase the new world's source.
+    public static void onServerAboutToStart() {
+        LocalTerrainProvider.clearCatalogSnapshotSource();
+    }
+
+    // Preserve the existing provider/cache timing independently of catalog state.
     public static void onServerStarting() {
         LocalTerrainProvider.clearCache();
     }
 
     // Called by each loader when a server level is loaded
     public static void onWorldLoad(ServerLevel world) {
+        // Platforms without owning catalog integration remain legacy.
+        onWorldLoad(world,() -> new BiomeCatalog.Snapshot<>(false,List.of()));
+    }
+
+    public static void onWorldLoad(ServerLevel world, Supplier<? extends BiomeCatalog.Snapshot<?>> catalog) {
         if (world.dimension() == Level.OVERWORLD) {
             WorldScaleManager.initializeForWorld(world);
             WorldPipeline.setCacheRoot(world.getServer().getWorldPath(LevelResource.ROOT));
             LocalTerrainProvider.init(world.getSeed());
+            LocalTerrainProvider.bindCatalogSnapshotSource(catalog);
             TerralithSurfaceRules.apply(world);
             DeepOres.apply(world);
             TfmgCompat.apply(world);
@@ -101,6 +116,7 @@ public final class TerrainDiffusionLifecycle {
 
     // Called by each loader when the server is stopping
     public static void onServerStopping() {
+        LocalTerrainProvider.clearCatalogSnapshotSource();
         ExplorerServer.stop();
     }
 

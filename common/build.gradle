@@ -104,4 +104,22 @@ tasks.register('catalogTest', JavaExec) {
     mainClass = 'com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalogTest'
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
-tasks.named('check') { dependsOn 'catalogTest' }
+tasks.register('catalogFilterTest', JavaExec) {
+    dependsOn 'compileCatalogTests'
+    classpath = files(catalogTestClasses)
+    mainClass = 'com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalogFilterTest'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.register('catalogSnapshotSourceTest', JavaExec) {
+    dependsOn 'compileCatalogTests'
+    classpath = files(catalogTestClasses)
+    mainClass = 'com.github.xandergos.terraindiffusionmc.catalog.CatalogSnapshotSourceTest'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.register('catalogClassificationStateTest', JavaExec) {
+    dependsOn 'compileCatalogTests'
+    classpath = files(catalogTestClasses)
+    mainClass = 'com.github.xandergos.terraindiffusionmc.catalog.CatalogClassificationStateTest'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn 'catalogTest', 'catalogFilterTest', 'catalogSnapshotSourceTest', 'catalogClassificationStateTest' }
