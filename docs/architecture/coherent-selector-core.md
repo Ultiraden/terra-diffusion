@@ -1,0 +1,41 @@
+# Isolated cellular-v1 selector core
+
+`CoherentBiomeSelector<B>` is pure Java. It consumes a validated immutable catalog snapshot with resolved generic biome objects, a full signed 64-bit world seed and immutable configuration. It reuses `BiomeCatalogFilter.Compiled` without changing environmental derivation, extraction, registry resolution or schema v1. Equal environment/range/predicate programs share one evaluation per column; resolved candidates and their actual entry IDs remain distinct. Same-biome split entries add weights only when they are eligible members of the winning tier.
+
+This commit does not connect the selector to Minecraft, world presets, activation, the provider, palette decoding or #7 traces. Legacy behavior is untouched. Integration awaits the owning session/pool decision and the accepted #7 base. Private architecture analysis is in `validation/issue-6-design/activation-session-addendum.md` in the review workspace.
+
+## Geometry and scope
+
+Default lattice spacing is 1024 WORLD BLOCKS at Scale 1 and Scale 2. Configuration accepts integer spacing from 16 to 65536, with production query positions bounded to the inclusive Minecraft domain ±30,000,000. These are selector bounds, not a request to expose every value in the initial preset UI. The site in signed cell `(cx,cz)` lies in the central half of the cell: `(cx+.5)h + jitterX`, `(cz+.5)h + jitterZ`, with each jitter in `[-.25h,.25h)`. Use floor division for negative world coordinates. Double site positions are precise enough at the supported world boundary; integer cell multiplication cannot overflow this bounded domain.
+
+The point's own cell site is at distance at most `sqrt(2)*.75h < 1.061h`. A site outside the surrounding 3×3 cells has at least one coordinate at distance at least `1.25h`. Thus nine sites suffice everywhere, including cell edges and negative coordinates. Exact distance ties choose signed cell X then Z. Any two sites are at least `.5h` apart, so each Voronoi region contains an open radius `.25h` disk around its site. Under constant eligibility it cannot collapse into per-column checkerboard patches. Eligibility transitions can still subdivide labels at environmental boundaries.
+
+The full seed and signed cell coordinates enter fixed mix64 domain-separated geometry hashes and a separate label hash. The source constants, arithmetic, jitter range, tie rule and 53-bit quantile extraction define `cellular-v1`; changing them changes that version. A site label quantile is `(unsignedHash >>> 11) * 2^-53`, in `[0,1)`. Geometry and labels have separate hash domains. The expected weighted area argument assumes an ideal independent uniform label unrelated to site area; deterministic hash construction is tested empirically, not a proof of probabilistic independence.
+
+Each caller owns a bounded reusable Scratch for its tile. An aligned 1024×1024 query at spacing 1024 caches nine sites; an unaligned tile caches sixteen. A scratch rectangle may hold at most 65536 sites; larger requests must split. Selection uses primitive arrays, nine distance calculations, cached per-column eligibility epochs and existing Candidate objects. It creates no per-column SHA, noise object, map, stream or eligible-list allocation. Scratch is thread confined; compiled selectors are immutable. Explicit debug `decision()` and `eligible()` allocate on request.
+
+## Eligibility, priority and binary64 choice
+
+Evaluate hard eligibility exactly through the existing compiled programs. Missing constrained numeric/state inputs fail closed; unconstrained missing future inputs do not create exclusions. Discard zero-weight candidates for selection. If any eligible positive normal entry exists, retain the maximum normal priority and exclude every fallback. Otherwise retain the maximum eligible positive fallback priority. Candidates in that tier follow global ASCII entry-ID order. Larger signed priorities win without subtracting integers. Inactive and positive-empty snapshots produce null plus a typed Scratch no-match reason; callers must implement their approved fallback policy explicitly.
+
+Accumulate retained weights in ASCII binary64 order and choose the first strict CDF interval whose upper bound exceeds `U*total`. If the product rounds to total, clamp to `nextDown(total)`. A final defensive return can reference only the last retained eligible positive candidate. It cannot choose an arbitrary zero/ineligible catalog tail. The compiled snapshot rejects a nonfinite global ASCII total in accordance with v1.
+
+For a subnormal retained total, exactly scale the retained weights and total by `2^1023` before sampling. This rare path preserves ordinary relative ratios such as `[MIN_VALUE,3*MIN_VALUE]` versus `[1,3]`, without global normalization that could erase a small eligible tier when a huge unrelated fallback exists. Report the original total and the scaling exponent. Ordinary unit-weight/default selection skips this path.
+
+Finite-resolution limitations remain: tiny positive weights may have collapsed binary64 CDF intervals or be below one 53-bit quantile step. Scratch records both diagnostic counts; it never promises that every positive infinitesimal is reachable. Zero and ineligible entries remain unreachable. Fixed-eligibility long-run frequencies are expected to track retained relative weights; no exact global frequency is promised when eligibility/priority changes across the map. Extracted 429 unit defaults are unchanged and have not been calibrated to reproduce legacy biome rarity.
+
+## Pure verification recipe and limits
+
+From the pack issue-6 worktree, run:
+
+```text
+python scripts/test-coherent-biome-selector.py --td-root <issue-6-td> --java-home <jdk21> --output-dir <fresh-evidence-directory>
+```
+
+The runner refuses overwrite, compiles only pure classes, runs the existing catalog/filter contracts plus the new selector suite, compares nine geometry bit vectors against independent Python unsigned arithmetic, and records actual process exits, exact inputs, class hashes and reports. No Minecraft, Gradle, native inference or GPU is launched. Inputs must remain byte-identical through the run.
+
+The suite covers hard admission endpoints, priority/fallback, signed priorities, arbitrary resolved-object identity, zero weights, tiny intervals, retained-tier subnormal scaling in the presence of a huge unrelated fallback, crop/input/query order, high seed bits, bounded geometry versus exhaustive 7×7 search, negative coordinates and world edges. Frequency fixtures use ten frozen full-width seeds and 100,000 distinct sites each, with weights 0/1/3/9, 1:1, 1:3, 1:9, doubled weights and same-biome overlaps. Unit/subnormal/large power-of-two ratios must produce identical individual selections. The family limit and statistical threshold are declared before observations; the ideal-IID interpretation is recorded honestly. An average-of-two-uniform CDF and a checkerboard are broken controls that the checks must reject.
+
+The 2048² constant-gate map measures adjacency coherence. Actual 429 delivery fixtures verify all admission lists against the existing reference and selected candidates against hard constraints. A warmed 1024² primitive-context benchmark reports admission-only compiled-429 reference cost and full shared-selector cost separately; it is not a legacy-bridge speed comparison or inference/runtime acceptance. Where the JDK allocation counter is supported, the warmed selector hot loop must allocate zero measured bytes. Compilation, scratch and explicit debug construction are excluded.
+
+Minecraft codec/bootstrap, owning registry holder identity, feature-sort validity, persistence, captured reload/enqueue behavior, Scale1/2 world maps and human appearance acceptance remain separate integration gates. Measure the unchanged actual legacy bridge with the same derived contexts when that integration benchmark exists. Do not remove the bridge on the strength of these pure checks.
