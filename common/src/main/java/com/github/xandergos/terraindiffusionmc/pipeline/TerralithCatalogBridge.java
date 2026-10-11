@@ -55,6 +55,8 @@ public final class TerralithCatalogBridge {
     private boolean selectedMappingUnavailable;
     private NoMatch lastNoMatch = NoMatch.NONE;
     private long noMatch, warmRiverNoMatch, unavailableMapping;
+    private BiomeDebugTrace.Selection debugSelection;
+    public void observeSelection(BiomeDebugTrace.Selection observer) { debugSelection=observer; }
     public TerralithCatalogBridge(BiomeCatalog.Snapshot<?> snapshot) {
         if (!snapshot.active()) throw new IllegalArgumentException("inactive catalog uses explicit legacy classification");
         Map<String,BiomeCatalog.Entry> entries = new TreeMap<>();
@@ -115,6 +117,7 @@ public final class TerralithCatalogBridge {
         if (admitted[rule] == 0) {
             admitted[rule] = 1;
             for (var entry : rules.get(rule)) if (entry.eligible(context)) { admitted[rule] = 2; break; }
+            if (debugSelection != null) debugSelection.gate(rule,admitted[rule] == 2);
         }
         return admitted[rule] == 2;
     }
@@ -127,13 +130,17 @@ public final class TerralithCatalogBridge {
             expectedTarget=true;
             if (entry.eligible(context)) {
                 eligibleExpectedTarget=true;
-                if (entry.definition().selection().weight() > 0d) return TerralithCatalogBindings.TARGETS[rule];
+                if (entry.definition().selection().weight() > 0d) {
+                    if (debugSelection != null) debugSelection.chosen(rule,entry.definition().id());
+                    return TerralithCatalogBindings.TARGETS[rule];
+                }
             }
         }
         unavailableMapping++;
         selectedMappingUnavailable = true;
         Failure reason=rules.get(rule).isEmpty() ? Failure.MISSING : !expectedTarget ? Failure.TARGET_MISMATCH : eligibleExpectedTarget ? Failure.ZERO_WEIGHT : Failure.HARD_INELIGIBLE;
         selectedFailures[rule][reason.ordinal()]++;
+        if (debugSelection != null) debugSelection.failed(rule,reason.label);
         return NONE;
     }
     public short warmRiver(TerrainSample s) {

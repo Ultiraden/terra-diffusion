@@ -2,6 +2,7 @@ package com.github.xandergos.terraindiffusionmc;
 
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
+import com.github.xandergos.terraindiffusionmc.pipeline.BiomeDebugTrace;
 import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
 import com.github.xandergos.terraindiffusionmc.platform.PlatformPaths;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
@@ -88,6 +89,7 @@ public final class TerrainDiffusionLifecycle {
     // NeoForge ServerStartingEvent follows loadLevel/world-load. Reset this
     // binding at the earlier event so it cannot erase the new world's source.
     public static void onServerAboutToStart() {
+        BiomeDebugTrace.clear();
         LocalTerrainProvider.clearCatalogSnapshotSource();
     }
 
@@ -116,6 +118,7 @@ public final class TerrainDiffusionLifecycle {
 
     // Called by each loader when the server is stopping
     public static void onServerStopping() {
+        BiomeDebugTrace.clear();
         LocalTerrainProvider.clearCatalogSnapshotSource();
         ExplorerServer.stop();
     }
