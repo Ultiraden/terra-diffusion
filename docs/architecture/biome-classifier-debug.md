@@ -1,8 +1,9 @@
-# Classifier developer observations (issue #7 candidate)
+# Classifier developer observations (issue #7)
 
-The candidate `1.3.0-m1.6` adds `/packdebug biome` on NeoForge. It is pending
-native command validation and acceptance. The accepted pack remains pinned to
-`TD_m1.5` until delivery is reviewed. No profile or world enables tracing automatically.
+`1.3.0-m1.6` adds `/packdebug biome` on NeoForge. Source tests, strict reproducible
+Windows/CUDA builds and the registered-command native gates passed. Pack pinning
+and publication follow the separate delivery review. No profile or world enables
+tracing automatically.
 
 Start a developer JVM with the complete argument quoted by the launching shell:
 
@@ -99,7 +100,7 @@ Oversized records or total quota excess produce explicit budget-unavailable
 status; no partial eligibility list is presented as complete. Configuring 64
 positions does not guarantee that all 64 full catalog traces fit the quota.
 
-## Validation status
+## Tested scope and reproduction
 
 The issue #7 source adapter retains every accepted #5 oracle assertion. It adds
 production debug-on/off comparisons for 16 classifier grids at native and
@@ -107,6 +108,51 @@ upsampled pixel sizes, with outputs, snow bytes, all 34 derived fields and
 diagnostic counters unchanged. It tests full 429-entry records, sorted reasons,
 selection metadata, unavailable/nonfinite fields, zero-weight exact-mapping
 failure, missing climate, lifecycle epochs, old captured catalogs and 64-position
-quota status. Actual owning provider publication, command permission, loaded
-palette reads, reload retention and no-mutation fingerprints require the separate
-reviewed native runtime gate before acceptance.
+quota status. Source gates passed 93 loader, 266 filter, 14 snapshot and 30
+activation checks; 120,000 oracle outputs, 20,736 boundary comparisons,
+1,114,112 actual classifier outputs/snow/all 34 fields, 140,912 bridge assertions,
+22,832 debug assertions and 142 quota assertions. Pure tests stub model resolution
+and Terralith availability; native behavior has separate evidence.
+
+The tested Java/runtime source is commit
+`3b6eab8181316bec62eed238579bff59576b783a`, tree
+`97c4f4d4fa0d5aa8ad8fb8f59aa09046ffb3c898`. This final documentation refresh
+does not change its Java bytes. Both delivered variants passed strict full builds
+and `--rerun-tasks`, yielding identical JAR bytes per variant.
+
+Three isolated serial NeoForge 21.1.251 servers exercised Windows scale1, CUDA
+scale1 and CUDA scale2. Each completed four normal provider captures and 235
+actual registered Brigadier command checks (705 total), then exited0 without
+force-kill. Native captures use30m pixels; actual upsampled captures use15m pixels.
+The gates checked stored loaded quart palettes separately from captured surface
+short IDs/snow, exact context/units/f32 bits, all eligible and rejected pages,
+actual policy/selection, player/console forms, permission0/1 denial, invalid Y,
+unsupported dimension, unloaded/untraced locations and negative quart snapping.
+Repeated payloads were byte-identical within a fixture. Ordinary reload from429
+to428 definitions, then activation removal, preserved all prior captured payloads;
+new normal generation observed428 then inactive legacy0 respectively.
+
+Synchronous before/control/after fingerprints remained equal for every command.
+They cover cache identities/access order/clocks, PENDING/tasks, pipeline memory
+order/counters, disk counters, diagnostic weak-table sets, trace accounting,
+chunk lookup arrays/holder maps/tickets and generation/promotion future states.
+They do not deep-hash tensor contents. Inspections neither expunge weak keys nor
+refresh LRUs; temporary strong referent pins isolate garbage collection. The
+private FakePlayer constructor and ordinary forceload commands are explicit
+fixture preparation and may generate. Commands under test run only after whole
+state is stable across yielded polls, generation tasks/references/requested and
+promotion futures complete, and provider/disk work is idle.
+
+The first Windows attempt stopped before a narrowed-catalog query because its
+inspection control saw background cached-terrain reads while inference was idle.
+Its exact failed evidence is preserved. Only the private readiness/setup observer
+was corrected; production source and artifacts stayed unchanged. No numerical
+parity between providers or scales is claimed. Native surface/snow correspondence
+checks cover four points per fixture; whole-grid debug-on/off equivalence is the
+separate source test. Reopening does not restore ephemeral precise traces.
+
+The pack owns the source adapter `scripts/m1-classifier-debug/verify.py` and exact
+tested runtime helper/preparation/result bundles under
+`docs/architecture/evidence/m1-classifier-debug`. Their manifest records hashes,
+commands, input pins and the failed attempt. No observer mod is installed in
+ordinary profiles.
