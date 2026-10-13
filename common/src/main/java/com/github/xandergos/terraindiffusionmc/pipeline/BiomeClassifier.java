@@ -93,10 +93,20 @@ public final class BiomeClassifier {
                                     byte[] snowLayersOut, boolean[] riverMask,
                                     BiomeCatalog.Snapshot<?> catalog,
                                     Consumer<TerralithCatalogBridge.Diagnostics> diagnostics) {
+        return classify(elev,climate,i0,j0,elevPadded,H,W,pixelSizeM,snowLayersOut,riverMask,catalog,diagnostics,null);
+    }
+
+    public static short[] classify(float[] elev, float[] climate, int i0, int j0,
+                                    float[] elevPadded, int H, int W, float pixelSizeM,
+                                    byte[] snowLayersOut, boolean[] riverMask,
+                                    BiomeCatalog.Snapshot<?> catalog,
+                                    Consumer<TerralithCatalogBridge.Diagnostics> diagnostics,
+                                    BiomeDebugTrace.Tile debugTile) {
         short[] out = new short[H * W];
         for (int i = 0; i < H * W; i++) out[i] = PLAINS;
 
         if (climate == null || climate.length < 4 * H * W) {
+            if (debugTile != null) debugTile.missingClimate(pixelSizeM);
             return out;
         }
 
@@ -254,23 +264,37 @@ public final class BiomeClassifier {
                 sample.warm = warm;
                 sample.hot = hot;
 
+                boolean traced = debugTile != null && debugTile.watches(sample.worldX,sample.worldZ);
+                BiomeDebugTrace.Selection selection = traced && bridge != null ? new BiomeDebugTrace.Selection() : null;
+                if (bridge != null) bridge.observeSelection(selection);
+                String route = null, fallback = "none";
                 short biome;
                 if (!sample.isOcean && riverMask != null && riverMask[idx]) {
                     biome = riverBiome(sample, useTerralith, bridge);
+                    if (traced) {
+                        route = sample.temp <= -3f ? "frozen-river" : bridge != null ? "bridge-warm-river" : "legacy-river";
+                        if (bridge != null && sample.temp > -3f && bridge.lastNoMatch() != TerralithCatalogBridge.NoMatch.NONE)
+                            fallback = bridge.lastNoMatch()+" -> minecraft:river";
+                    }
                 } else {
                     biome = TerralithClassifier.NONE;
                     if (useTerralith) {
                         biome = bridge == null ? TerralithClassifier.pick(sample) : bridge.pick(sample);
                     }
                     if (biome == TerralithClassifier.NONE) {
+                        if (traced) fallback = (bridge == null ? "policy NONE" : bridge.lastNoMatch().toString()) + " -> existing fallback palette";
                         biome = classifyVanilla(sample);
                     }
+                    if (traced) route = bridge != null ? "catalog-ordered-bridge" : useTerralith ? "inactive-catalog-legacy" : "existing-fallback-palette";
                 }
 
                 out[idx] = biome;
                 if (snowLayersOut != null) {
                     snowLayersOut[idx] = snowDepthFor(sample);
                 }
+                if (traced) debugTile.capture(sample,riverMask != null && riverMask[idx],pixelSizeM,
+                    bridge != null ? "legacy-bridge" : useTerralith ? "legacy" : "existing-fallback-palette",
+                    route,biome,snowLayersOut == null ? -1 : Byte.toUnsignedInt(snowLayersOut[idx]),selection,fallback);
             }
         }
         if (bridge != null) diagnostics.accept(bridge.diagnostics());

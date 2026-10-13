@@ -187,6 +187,7 @@ public final class LocalTerrainProvider {
             INSTANCE = new LocalTerrainProvider(seed, models);
             instanceSeed = seed;
         } else if (instanceSeed != seed) {
+            BiomeDebugTrace.clear();
             INSTANCE.pipeline.setSeed(seed);
             instanceSeed = seed;
             CACHE.clear();
@@ -247,6 +248,7 @@ public final class LocalTerrainProvider {
             LocalTerrainProvider provider = getInstance();
             provider.pipeline.setSeed(newSeed);
             instanceSeed = newSeed;
+            BiomeDebugTrace.clear();
             CACHE.clear();
             PENDING.clear();
             return null;
@@ -303,11 +305,13 @@ public final class LocalTerrainProvider {
         // successful /reload affects later tiles; cached/pending tiles keep
         // their original immutable classification inputs and existing keys.
         BiomeCatalog.Snapshot<?> catalog = CATALOG.capture();
+        BiomeDebugTrace.Tile debugTile = BiomeDebugTrace.begin(
+            new BiomeDebugTrace.TileKey(instanceSeed,scale,i1,j1,i2,j2),TerrainDiffusionConfig.tileSize(),catalog);
         PriorityTask<HeightmapData> task = new PriorityTask<>(() -> {
             long computedWindowCountBefore = pipeline.getTotalComputedWindowCount();
             HeightmapData data = scale <= 1
-                    ? handle1x(i1, j1, i2, j2, catalog)
-                    : handleUpsampled(i1, j1, i2, j2, scale, catalog);
+                    ? handle1x(i1, j1, i2, j2, catalog, debugTile)
+                    : handleUpsampled(i1, j1, i2, j2, scale, catalog, debugTile);
             data.karst = RiverHydrology.karstAt(pipeline, i1 / (float) scale, j1 / (float) scale,
                     NATIVE_RESOLUTION / scale);
             long newlyComputedWindowCount =
@@ -321,6 +325,7 @@ public final class LocalTerrainProvider {
             CACHE.put(key, new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet())));
             evictLruTo(maxCacheSize());
             PENDING.remove(key);
+            BiomeDebugTrace.publish(debugTile);
             return data;
         }, priority);
 
@@ -346,7 +351,7 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private HeightmapData handle1x(int i1, int j1, int i2, int j2, BiomeCatalog.Snapshot<?> catalog) {
+    private HeightmapData handle1x(int i1, int j1, int i2, int j2, BiomeCatalog.Snapshot<?> catalog, BiomeDebugTrace.Tile debugTile) {
         int H = i2 - i1, W = j2 - j1;
 
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
@@ -359,11 +364,11 @@ public final class LocalTerrainProvider {
 
         byte[] snowFlat = new byte[H * W];
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W,
-                NATIVE_RESOLUTION, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d));
+                NATIVE_RESOLUTION, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d), debugTile);
         return buildHeightmapData(waterOut[0], climate, biomeFlat, snowFlat, waterOut[1], H, W, NATIVE_RESOLUTION);
     }
 
-    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale, BiomeCatalog.Snapshot<?> catalog) {
+    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale, BiomeCatalog.Snapshot<?> catalog, BiomeDebugTrace.Tile debugTile) {
         int H = i2 - i1, W = j2 - j1;
         float pixelSizeM = NATIVE_RESOLUTION / scale;
 
@@ -401,7 +406,7 @@ public final class LocalTerrainProvider {
 
         byte[] snowFlat = new byte[H * W];
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W,
-                pixelSizeM, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d));
+                pixelSizeM, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d), debugTile);
         return buildHeightmapData(waterOut[0], climate, biomeFlat, snowFlat, waterOut[1], H, W, pixelSizeM);
     }
 

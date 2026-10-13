@@ -17,6 +17,7 @@ import net.neoforged.neoforge.event.TagsUpdatedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.fml.ModList;
 import com.github.xandergos.terraindiffusionmc.catalog.minecraft.BiomeCatalogRuntime;
+import com.github.xandergos.terraindiffusionmc.debug.BiomeDebugCommand;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +73,7 @@ public class TerrainDiffusionMc {
     }
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
+        BiomeDebugCommand.register(event.getDispatcher());
         TerrainDiffusionLifecycle.registerCommands(event.getDispatcher());
     }
 
