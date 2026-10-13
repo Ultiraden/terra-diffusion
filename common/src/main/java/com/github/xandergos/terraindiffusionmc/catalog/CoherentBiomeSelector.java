@@ -12,6 +12,7 @@ public final class CoherentBiomeSelector<B> {
     public static final int MIN_SPACING = 16, MAX_SPACING = 65536;
     public static final long WORLD_LIMIT = 30_000_000L;
     public static final int MAX_SCRATCH_SITES = 65536;
+    public static final int MAX_CANONICAL_TILE_SIZE = 65536;
     private static final double QUANTUM = 0x1.0p-53;
     private static final long X_DOMAIN = 0x6a09e667f3bcc909L, Z_DOMAIN = 0xbb67ae8584caa73bL;
     private static final long JITTER_X = 0x3c6ef372fe94f82bL, JITTER_Z = 0xa54ff53a5f1d36f1L;
@@ -85,7 +86,20 @@ public final class CoherentBiomeSelector<B> {
     /** Fixed rectangular scratch. Bounds are block positions, upper bounds exclusive.
      * Requests needing more sites must split their scratch, not create an unbounded map. */
     public Scratch scratch(long minX,long minZ,long maxXExclusive,long maxZExclusive) {
-        return new Scratch(minX,minZ,maxXExclusive,maxZExclusive);
+        return new Scratch(minX,minZ,maxXExclusive,maxZExclusive,0);
+    }
+    /** Complete internal tile at the world edge. Actual valid positions retain identical geometry.
+     * Only aligned tiles intersecting the valid domain qualify; public point scratch stays strict.
+     * The per-tile spill is at most size-1 and the existing site memory budget still applies. */
+    public Scratch canonicalScratch(long tileX,long tileZ,int size) {
+        if(size<=0||size>MAX_CANONICAL_TILE_SIZE||(size&(size-1))!=0
+                ||Math.floorMod(tileX,size)!=0||Math.floorMod(tileZ,size)!=0)
+            throw new IllegalArgumentException("invalid bounded canonical tile");
+        long spill=size-1L;
+        if(tileX < -WORLD_LIMIT-spill||tileX>WORLD_LIMIT||tileZ < -WORLD_LIMIT-spill||tileZ>WORLD_LIMIT
+                ||tileX+size<=-WORLD_LIMIT||tileZ+size<=-WORLD_LIMIT)
+            throw new IllegalArgumentException("canonical tile does not intersect valid world positions");
+        return new Scratch(tileX,tileZ,tileX+size,tileZ+size,spill);
     }
     public final class Scratch {
         private final CoherentBiomeSelector<B> owner=CoherentBiomeSelector.this;
@@ -99,8 +113,8 @@ public final class CoherentBiomeSelector<B> {
         private double total;
         private NoMatch noMatch=NoMatch.NO_ELIGIBLE_POSITIVE_CANDIDATE;
         private long programEvaluations,distanceEvaluations;
-        private Scratch(long minX,long minZ,long maxX,long maxZ) {
-            if (minX < -WORLD_LIMIT || minZ < -WORLD_LIMIT || maxX > WORLD_LIMIT+1 || maxZ > WORLD_LIMIT+1 || minX>=maxX || minZ>=maxZ)
+        private Scratch(long minX,long minZ,long maxX,long maxZ,long spill) {
+            if (minX < -WORLD_LIMIT-spill || minZ < -WORLD_LIMIT-spill || maxX > WORLD_LIMIT+1+spill || maxZ > WORLD_LIMIT+1+spill || minX>=maxX || minZ>=maxZ)
                 throw new IllegalArgumentException("invalid supported world rectangle");
             this.minX=minX;this.minZ=minZ;this.maxX=maxX;this.maxZ=maxZ;
             int h=config.spacingBlocks();
@@ -196,7 +210,7 @@ public final class CoherentBiomeSelector<B> {
     }
     /** Explicit geometry inspection, independent of scratch/selection; not the column hot path. */
     public Site site(long cellX,long cellZ) {
-        int h=config.spacingBlocks();long cellLimit=WORLD_LIMIT/h+4;
+        int h=config.spacingBlocks();long cellLimit=(WORLD_LIMIT+MAX_CANONICAL_TILE_SIZE-1)/h+4;
         if (cellX < -cellLimit || cellX>cellLimit || cellZ < -cellLimit || cellZ>cellLimit) throw new IllegalArgumentException("unsupported lattice site");
         long b=base(worldSeed,cellX,cellZ);
         return new Site(cellX,cellZ,position(cellX,h,uniform(mix64(b^JITTER_X))),position(cellZ,h,uniform(mix64(b^JITTER_Z))),uniform(mix64(b^LABEL)));
