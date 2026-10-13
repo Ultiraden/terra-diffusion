@@ -1,5 +1,6 @@
 {
   "generator.terrain-diffusion-mc.terrain_diffusion": "Terrain Diffusion",
+  "generator.ultira.terrain_diffusion_generic": "Terrain Diffusion (Generic Catalog)",
   "terrain-diffusion-mc.world_settings.title": "Terrain Settings",
   "terrain-diffusion-mc.world_settings.open_button": "Terrain Settings",
   "terrain-diffusion-mc.world_settings.scale": "World Scale",

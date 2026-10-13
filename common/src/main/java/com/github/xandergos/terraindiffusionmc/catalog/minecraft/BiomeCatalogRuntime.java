@@ -3,6 +3,9 @@ package com.github.xandergos.terraindiffusionmc.catalog.minecraft;
 import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
 import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalogLoader;
 import com.github.xandergos.terraindiffusionmc.catalog.CatalogClassificationState;
+import com.github.xandergos.terraindiffusionmc.catalog.RegistryClassificationController;
+import com.github.xandergos.terraindiffusionmc.catalog.WorldClassificationPublication;
+import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
@@ -27,8 +30,18 @@ public final class BiomeCatalogRuntime {
     private static final ResourceLocation ACTIVATION=ResourceLocation.parse(CatalogClassificationState.ACTIVATION_RESOURCE);
     // Biomes are worldgen registries and remain stable over /reload. Distinct servers
     // never inherit another registry's holders or last-good snapshot.
-    private static final Map<Registry<Biome>, CatalogClassificationState<Holder<Biome>>> LOADERS = new WeakHashMap<>();
-    private record Pending(Registry<Biome> registry, CatalogClassificationState<Holder<Biome>> loader,
+    private static final BiomeCatalog.Snapshot<Holder<Biome>> INACTIVE=new BiomeCatalog.Snapshot<>(false,List.of());
+    private static final class Loader {
+        final CatalogClassificationState<Holder<Biome>> validator=new CatalogClassificationState<>();
+        final RegistryClassificationController<Holder<Biome>> controller=new RegistryClassificationController<>();
+        BiomeCatalog.Snapshot<Holder<Biome>> classification(){
+            var state=controller.state();
+            for(var world:state.worlds().values())if(world.policy().generic())return world.catalog();
+            return state.enabled()?state.catalog():INACTIVE;
+        }
+    }
+    private static final Map<Registry<Biome>, Loader> LOADERS = new WeakHashMap<>();
+    private record Pending(Registry<Biome> registry, Loader loader,
                            CatalogClassificationState.Proposal<Holder<Biome>> proposal) {}
     public record Prepared(List<BiomeCatalogLoader.Resource> resources, Optional<BiomeCatalogLoader.Resource> activation) {
         public Prepared { resources=List.copyOf(resources); }
@@ -39,17 +52,31 @@ public final class BiomeCatalogRuntime {
     // later retry's tags event, even when its biome registry object is reused.
     private static final Map<RegistryAccess, Pending> PENDING = new WeakHashMap<>();
     private BiomeCatalogRuntime() {}
-    private static synchronized CatalogClassificationState<Holder<Biome>> loader(Registry<Biome> registry) {
-        return LOADERS.computeIfAbsent(registry, ignored -> new CatalogClassificationState<>());
+    private static synchronized Loader loader(Registry<Biome> registry) {
+        return LOADERS.computeIfAbsent(registry, ignored -> new Loader());
     }
     public static BiomeCatalog.Snapshot<Holder<Biome>> snapshot(RegistryAccess access) {
-        return loader(access.registryOrThrow(Registries.BIOME)).snapshot();
+        return loader(access.registryOrThrow(Registries.BIOME)).controller.state().catalog();
     }
     /** Caller explicitly owns classification activation. Capture the stable
      * registry, never a ServerLevel or a reload-cycle ResourceManager. */
     public static Supplier<BiomeCatalog.Snapshot<Holder<Biome>>> classificationSource(RegistryAccess access) {
         Registry<Biome> registry=access.registryOrThrow(Registries.BIOME);
-        return () -> loader(registry).classificationSnapshot();
+        return () -> loader(registry).classification();
+    }
+    /** Ordinary owning-world binding, after saved scale initialization and before enqueue. */
+    public static Supplier<WorldClassificationPublication<Holder<Biome>>> bindWorld(RegistryAccess access,
+            TerrainDiffusionBiomeSource source,long seed,int scale) {
+        Registry<Biome> registry=access.registryOrThrow(Registries.BIOME);
+        var palette=source.genericPalette();
+        if(palette!=null)palette.verifyOwnership(id -> registry.getHolder(ResourceLocation.parse(id)).map(h -> (Holder<Biome>)h));
+        Loader owner=loader(registry);
+        synchronized(owner.controller) {
+            if(!owner.controller.state().worlds().isEmpty())throw new IllegalStateException("TD owning Overworld already bound to registry");
+            var handle=owner.controller.bind(seed,scale,source.selectionPolicy(),palette);
+            for(String diagnostic:handle.get().diagnostics())LOG.error("Initial generic classification inactive: {}",diagnostic);
+            return handle;
+        }
     }
     public static synchronized void release(RegistryAccess access) {
         access.registry(Registries.BIOME).ifPresent(registry -> {
@@ -61,20 +88,27 @@ public final class BiomeCatalogRuntime {
     public static synchronized void activate(RegistryAccess access) {
         Pending pending = PENDING.remove(access);
         if (pending == null) return;
-        pending.loader.activate(pending.proposal);
-        var current = pending.loader.snapshot();
+        boolean accepted=false;
+        if(pending.proposal.accepted()) {
+            var commit=pending.loader.controller.commit(pending.proposal.catalog().snapshot(),pending.proposal.enabled());
+            accepted=commit.accepted();
+            for(String diagnostic:commit.diagnostics())LOG.error("Biome catalog rejected owning proposal: {}",diagnostic);
+            // Validator bookkeeping is private. Every exposed read uses controller's ONE record.
+            if(accepted)pending.loader.validator.activate(pending.proposal);
+        }
+        var current = pending.loader.controller.state().catalog();
         LOG.info("Biome catalog proposal {} after aggregate reload: active={}, entries={}, ids={}",
-            pending.proposal.accepted() ? "accepted" : "rejected; retained previous snapshot",
+            accepted ? "accepted" : "rejected; retained previous snapshot",
             current.active(), current.entries().size(), current.entries().stream().map(c -> c.definition().id()).toList());
         LOG.info("Biome catalog classification after aggregate reload: enabled={}, entries={}",
-            pending.loader.publication().enabled(),pending.loader.classificationSnapshot().entries().size());
+            pending.loader.controller.state().enabled(),pending.loader.classification().entries().size());
         // Do not delete another cycle's pending proposal: Minecraft can overlap
         // reload futures. Failed cycles cannot match a later tags event; their
         // weak keys expire with that failed reload's resources/context.
     }
     public static SimplePreparableReloadListener<Prepared> listener(RegistryAccess access, Set<String> loadedMods) {
         Registry<Biome> registry = access.registryOrThrow(Registries.BIOME);
-        CatalogClassificationState<Holder<Biome>> loader = loader(registry);
+        Loader loader = loader(registry);
         Set<String> mods = Set.copyOf(loadedMods);
         return new SimplePreparableReloadListener<>() {
             @Override
@@ -96,7 +130,7 @@ public final class BiomeCatalogRuntime {
             }
             @Override
             protected void apply(Prepared prepared, ResourceManager manager, ProfilerFiller profiler) {
-                var result = loader.propose(prepared.resources(),prepared.activation(), mods, id -> registry.getHolder(ResourceLocation.parse(id)).map(h -> (Holder<Biome>)h));
+                var result = loader.validator.propose(prepared.resources(),prepared.activation(), mods, id -> registry.getHolder(ResourceLocation.parse(id)).map(h -> (Holder<Biome>)h));
                 for (var diagnostic : result.diagnostics()) {
                     String message = "Biome catalog " + diagnostic.id() + " pack " + diagnostic.pack() + " " + diagnostic.pointer() + ": " + diagnostic.reason();
                     switch (diagnostic.severity()) {

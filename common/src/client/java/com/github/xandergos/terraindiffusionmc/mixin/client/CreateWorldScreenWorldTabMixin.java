@@ -29,6 +29,8 @@ public abstract class CreateWorldScreenWorldTabMixin {
 
     private static final ResourceKey<WorldPreset> TERRAIN_DIFFUSION_PRESET_KEY =
             ResourceKey.create(Registries.WORLD_PRESET, ResourceLocation.fromNamespaceAndPath("terrain-diffusion-mc", "terrain_diffusion"));
+    private static final ResourceKey<WorldPreset> GENERIC_PRESET_KEY =
+            ResourceKey.create(Registries.WORLD_PRESET, ResourceLocation.fromNamespaceAndPath("ultira", "terrain_diffusion_generic"));
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void terrainDiffusionMc$captureCreateWorldScreen(CreateWorldScreen createWorldScreen, CallbackInfo callbackInfo) {
@@ -68,7 +70,7 @@ public abstract class CreateWorldScreenWorldTabMixin {
         if (worldType == null) {
             return false;
         }
-        if (worldType.preset().unwrapKey().map(TERRAIN_DIFFUSION_PRESET_KEY::equals).orElse(false)) {
+        if (worldType.preset().unwrapKey().map(key -> TERRAIN_DIFFUSION_PRESET_KEY.equals(key) || GENERIC_PRESET_KEY.equals(key)).orElse(false)) {
             return true;
         }
         return "terrain diffusion".equalsIgnoreCase(worldType.describePreset().getString());

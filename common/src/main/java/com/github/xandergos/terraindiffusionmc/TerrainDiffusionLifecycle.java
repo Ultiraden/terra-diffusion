@@ -4,6 +4,7 @@ import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.BiomeDebugTrace;
 import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
+import com.github.xandergos.terraindiffusionmc.catalog.WorldClassificationPublication;
 import com.github.xandergos.terraindiffusionmc.platform.PlatformPaths;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
 import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
@@ -104,10 +105,20 @@ public final class TerrainDiffusionLifecycle {
         onWorldLoad(world,() -> new BiomeCatalog.Snapshot<>(false,List.of()));
     }
 
+    @FunctionalInterface public interface OwningClassificationFactory {
+        Supplier<? extends WorldClassificationPublication<?>> bind(TerrainDiffusionBiomeSource source,long seed,int scale);
+    }
     public static void onWorldLoad(ServerLevel world, Supplier<? extends BiomeCatalog.Snapshot<?>> catalog) {
+        onWorldLoad(world,catalog,null);
+    }
+    public static void onWorldLoad(ServerLevel world,Supplier<? extends BiomeCatalog.Snapshot<?>> catalog,OwningClassificationFactory factory) {
         if (world.dimension() == Level.OVERWORLD) {
             WorldScaleManager.initializeForWorld(world);
             WorldPipeline.setCacheRoot(world.getServer().getWorldPath(LevelResource.ROOT));
+            if(world.getChunkSource().getGenerator().getBiomeSource() instanceof TerrainDiffusionBiomeSource source) {
+                if(factory!=null)LocalTerrainProvider.bindWorldClassificationSource(factory.bind(source,world.getSeed(),WorldScaleManager.getCurrentScale()));
+                else if(source.selectionPolicy().generic())throw new IllegalStateException("generic source requires owning catalog integration on this platform");
+            }
             LocalTerrainProvider.init(world.getSeed());
             LocalTerrainProvider.bindCatalogSnapshotSource(catalog);
             TerralithSurfaceRules.apply(world);

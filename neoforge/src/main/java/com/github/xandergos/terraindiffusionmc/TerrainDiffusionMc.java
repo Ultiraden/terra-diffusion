@@ -64,7 +64,8 @@ public class TerrainDiffusionMc {
         if (event.getLevel() instanceof ServerLevel world) {
             // The registry-owned source exposes legacy unless this world's
             // successfully published datapack metadata explicitly opts in.
-            TerrainDiffusionLifecycle.onWorldLoad(world,BiomeCatalogRuntime.classificationSource(world.registryAccess()));
+            TerrainDiffusionLifecycle.onWorldLoad(world,BiomeCatalogRuntime.classificationSource(world.registryAccess()),
+                (source,seed,scale) -> BiomeCatalogRuntime.bindWorld(world.registryAccess(),source,seed,scale));
         }
     }
 

@@ -26,7 +26,9 @@ public final class TerralithSurfaceRules {
 
         generator.getBiomeSource().possibleBiomes();
 
-        if (!TerralithCompat.isActive() || !TerrainDiffusionConfig.terralithInjectSurfaceRules()) {
+        boolean terralith=generator.getBiomeSource() instanceof TerrainDiffusionBiomeSource source && source.selectionPolicy().generic()
+            ? source.genericTerralith() : TerralithCompat.isActive();
+        if (!terralith || !TerrainDiffusionConfig.terralithInjectSurfaceRules()) {
             return;
         }
 

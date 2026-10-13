@@ -2,6 +2,7 @@ package com.github.xandergos.terraindiffusionmc.pipeline;
 
 import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
 import com.github.xandergos.terraindiffusionmc.catalog.CatalogSnapshotSource;
+import com.github.xandergos.terraindiffusionmc.catalog.WorldClassificationPublication;
 
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
@@ -73,6 +74,8 @@ public final class LocalTerrainProvider {
 
         public final short[][] heightmap;
         public final short[][] biomeIds;
+        public final int[][] biomeIndexes;
+        public final WorldClassificationPublication<?> classification;
 
         public final byte[][] snowLayers;
         public final short[][] waterLevel;
@@ -86,6 +89,14 @@ public final class LocalTerrainProvider {
         public HeightmapData(short[][] heightmap, short[][] biomeIds, byte[][] snowLayers,
                              short[][] waterLevel, byte[][] climateT, byte[][] climateH,
                              byte[][] climateE, int width, int height) {
+            this(heightmap,biomeIds,null,null,snowLayers,waterLevel,climateT,climateH,climateE,width,height);
+        }
+        public HeightmapData(short[][] heightmap,short[][] biomeIds,int[][] biomeIndexes,
+                             WorldClassificationPublication<?> classification,byte[][] snowLayers,
+                             short[][] waterLevel,byte[][] climateT,byte[][] climateH,byte[][] climateE,int width,int height) {
+            this.biomeIndexes=biomeIndexes; this.classification=classification;
+            if(biomeIndexes!=null && (biomeIds!=null || classification==null || !classification.policy().generic()))
+                throw new IllegalArgumentException("generic tile requires integer indexes and captured owning publication");
             this.heightmap  = heightmap;
             this.biomeIds   = biomeIds;
             this.snowLayers = snowLayers;
@@ -167,7 +178,26 @@ public final class LocalTerrainProvider {
     private static final CatalogSnapshotSource CATALOG=new CatalogSnapshotSource();
 
     public static void bindCatalogSnapshotSource(Supplier<? extends BiomeCatalog.Snapshot<?>> supplier) { CATALOG.bind(supplier); }
-    public static void clearCatalogSnapshotSource() { CATALOG.clear(); }
+    private static volatile Supplier<? extends WorldClassificationPublication<?>> owningSource;
+    public static synchronized void bindWorldClassificationSource(Supplier<? extends WorldClassificationPublication<?>> supplier) {
+        if(owningSource!=null)throw new IllegalStateException("owning provider already bound");
+        var initial=java.util.Objects.requireNonNull(supplier.get());
+        if(initial.policy().generic()) {
+            // Validate the bounded canonical scratch before any native provider work.
+            int size=TerrainDiffusionConfig.tileSize();
+            if(initial.selector()!=null)initial.selector().canonicalScratch(0,0,size);
+            else new com.github.xandergos.terraindiffusionmc.catalog.CoherentBiomeSelector<>(
+                new BiomeCatalog.Snapshot<>(false,java.util.List.of()),initial.worldSeed(),
+                new com.github.xandergos.terraindiffusionmc.catalog.CoherentBiomeSelector.Config(initial.policy().spacingBlocks())).canonicalScratch(0,0,size);
+            clearCache();
+        }
+        owningSource=java.util.Objects.requireNonNull(supplier);
+    }
+    private static WorldClassificationPublication<?> captureOwning(){
+        var source=owningSource;return source==null?null:java.util.Objects.requireNonNull(source.get());
+    }
+    public static void verifyOwningProvider(long seed,int scale){var publication=captureOwning();if(publication!=null)publication.verifyProvider(seed,scale);}
+    public static synchronized void clearCatalogSnapshotSource() { owningSource=null; CATALOG.clear(); }
 
     private final WorldPipeline pipeline;
 
@@ -178,6 +208,7 @@ public final class LocalTerrainProvider {
     }
 
     public static synchronized void init(long seed) {
+        verifyOwningProvider(seed,WorldScaleManager.getCurrentScale());
         DeepCaverns.setSeed(seed);
         CaveBiomes.setSeed(seed);
         PipelineModels.awaitLoad();
@@ -244,7 +275,9 @@ public final class LocalTerrainProvider {
     }
 
     public static void changeSeedFromExplorer(long newSeed) throws Exception {
+        verifyOwningProvider(newSeed,WorldScaleManager.getCurrentScale());
         submitToInferenceThread(() -> {
+            verifyOwningProvider(newSeed,WorldScaleManager.getCurrentScale());
             LocalTerrainProvider provider = getInstance();
             provider.pipeline.setSeed(newSeed);
             instanceSeed = newSeed;
@@ -268,6 +301,7 @@ public final class LocalTerrainProvider {
     }
 
     public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
+        verifyOwningProvider(instanceSeed,WorldScaleManager.getCurrentScale());
         CacheKey key = new CacheKey(i1, j1, i2, j2);
         CacheEntry cached = CACHE.get(key);
         if (cached != null) {
@@ -304,14 +338,17 @@ public final class LocalTerrainProvider {
         // Capture before enqueue, not when the worker eventually starts. A
         // successful /reload affects later tiles; cached/pending tiles keep
         // their original immutable classification inputs and existing keys.
-        BiomeCatalog.Snapshot<?> catalog = CATALOG.capture();
+        WorldClassificationPublication<?> publication=captureOwning();
+        if(publication!=null)publication.verifyProvider(instanceSeed,scale);
+        BiomeCatalog.Snapshot<?> catalog = publication==null ? CATALOG.capture() : publication.catalog();
+        long capturedSeed=publication!=null && publication.policy().generic()?publication.worldSeed():instanceSeed;
         BiomeDebugTrace.Tile debugTile = BiomeDebugTrace.begin(
-            new BiomeDebugTrace.TileKey(instanceSeed,scale,i1,j1,i2,j2),TerrainDiffusionConfig.tileSize(),catalog);
+            new BiomeDebugTrace.TileKey(capturedSeed,scale,i1,j1,i2,j2),TerrainDiffusionConfig.tileSize(),catalog);
         PriorityTask<HeightmapData> task = new PriorityTask<>(() -> {
             long computedWindowCountBefore = pipeline.getTotalComputedWindowCount();
             HeightmapData data = scale <= 1
-                    ? handle1x(i1, j1, i2, j2, catalog, debugTile)
-                    : handleUpsampled(i1, j1, i2, j2, scale, catalog, debugTile);
+                    ? handle1x(i1, j1, i2, j2, catalog, debugTile,publication)
+                    : handleUpsampled(i1, j1, i2, j2, scale, catalog, debugTile,publication);
             data.karst = RiverHydrology.karstAt(pipeline, i1 / (float) scale, j1 / (float) scale,
                     NATIVE_RESOLUTION / scale);
             long newlyComputedWindowCount =
@@ -351,7 +388,7 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private HeightmapData handle1x(int i1, int j1, int i2, int j2, BiomeCatalog.Snapshot<?> catalog, BiomeDebugTrace.Tile debugTile) {
+    private HeightmapData handle1x(int i1, int j1, int i2, int j2, BiomeCatalog.Snapshot<?> catalog, BiomeDebugTrace.Tile debugTile,WorldClassificationPublication<?> publication) {
         int H = i2 - i1, W = j2 - j1;
 
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
@@ -363,12 +400,16 @@ public final class LocalTerrainProvider {
                 NATIVE_RESOLUTION, 1, 1);
 
         byte[] snowFlat = new byte[H * W];
+        if(publication!=null && publication.policy().generic()) {
+            int[] indexes=BiomeClassifier.classifyGeneric(elevFlat,climate,i1,j1,elevPadded,H,W,NATIVE_RESOLUTION,snowFlat,riverMask(waterOut[1]),publication,debugTile);
+            return buildGenericHeightmapData(waterOut[0],climate,indexes,snowFlat,waterOut[1],H,W,NATIVE_RESOLUTION,publication);
+        }
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W,
                 NATIVE_RESOLUTION, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d), debugTile);
         return buildHeightmapData(waterOut[0], climate, biomeFlat, snowFlat, waterOut[1], H, W, NATIVE_RESOLUTION);
     }
 
-    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale, BiomeCatalog.Snapshot<?> catalog, BiomeDebugTrace.Tile debugTile) {
+    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale, BiomeCatalog.Snapshot<?> catalog, BiomeDebugTrace.Tile debugTile,WorldClassificationPublication<?> publication) {
         int H = i2 - i1, W = j2 - j1;
         float pixelSizeM = NATIVE_RESOLUTION / scale;
 
@@ -405,6 +446,10 @@ public final class LocalTerrainProvider {
                 pixelSizeM, scale, 1);
 
         byte[] snowFlat = new byte[H * W];
+        if(publication!=null && publication.policy().generic()) {
+            int[] indexes=BiomeClassifier.classifyGeneric(elevSmooth,climate,i1,j1,elevPadded,H,W,pixelSizeM,snowFlat,riverMask(waterOut[1]),publication,debugTile);
+            return buildGenericHeightmapData(waterOut[0],climate,indexes,snowFlat,waterOut[1],H,W,pixelSizeM,publication);
+        }
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W,
                 pixelSizeM, snowFlat, riverMask(waterOut[1]), catalog, d -> reportCatalogDiagnostics(catalog,d), debugTile);
         return buildHeightmapData(waterOut[0], climate, biomeFlat, snowFlat, waterOut[1], H, W, pixelSizeM);
@@ -1058,6 +1103,16 @@ public final class LocalTerrainProvider {
         fillClimateParams(elevFlat, climate, climateT, climateH, climateE, H, W, metersPerBlock);
         return new HeightmapData(heightmap, biomeIds, snowLayers, waterLevel,
                 climateT, climateH, climateE, W, H);
+    }
+
+    private static HeightmapData buildGenericHeightmapData(float[] elev,float[] climate,int[] indexes,
+            byte[] snow,float[] water,int H,int W,float meters,WorldClassificationPublication<?> publication){
+        // Share accepted height/water/climate projection exactly; short values are not a generic encoding.
+        HeightmapData projection=buildHeightmapData(elev,climate,new short[H*W],snow,water,H,W,meters);
+        int[][] ids=new int[H][W];
+        for(int r=0;r<H;r++)System.arraycopy(indexes,r*W,ids[r],0,W);
+        return new HeightmapData(projection.heightmap,null,ids,publication,projection.snowLayers,projection.waterLevel,
+            projection.climateT,projection.climateH,projection.climateE,W,H);
     }
 
     private static final int RELIEF_WINDOW =
