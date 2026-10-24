@@ -86,7 +86,9 @@ public final class BiomeDebugCommand {
         line(source,"captured tile="+r.tile()+" source="+(r.tile().scale()<=1 ? "native" : "upsampled-smooth")+" pixel_size_m="+r.pixelSizeM());
         line(source,"captured catalog sha256="+r.catalogId()+" enabled="+r.catalogActive()+" resolved_entries="+r.catalogEntries());
         line(source,"policy="+r.policy()+" route="+r.route()+" selected_entry="+(r.selectedEntry()==null ? "none" : r.selectedEntry())
-            +" surface="+r.surfaceBiome()+" short_id="+r.surfaceId()+" snow_depth="+r.snowDepth()+" fallback="+r.fallback());
+            +" surface="+r.surfaceBiome()+(r.genericSelection()==null?" short_id="+r.surfaceId():" palette_index="+r.genericSelection().paletteIndex()
+                +" palette="+r.genericSelection().paletteId()+" spacing_world_blocks="+r.genericSelection().spacingWorldBlocks()
+                +" cellular="+r.genericSelection().decision())+" snow_depth="+r.snowDepth()+" fallback="+r.fallback());
         if(!r.unavailable().isEmpty()) { line(source,"precise trace unavailable: "+r.unavailable()+"; no complete eligibility list retained"); return 1; }
         var context=r.context();
         line(source,"environment="+context.environment()+" wet_mask="+r.wet());

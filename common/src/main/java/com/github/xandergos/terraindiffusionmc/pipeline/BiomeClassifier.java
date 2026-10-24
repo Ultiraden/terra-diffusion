@@ -1,6 +1,9 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
 import com.github.xandergos.terraindiffusionmc.catalog.BiomeCatalog;
+import com.github.xandergos.terraindiffusionmc.catalog.WorldClassificationPublication;
+import com.github.xandergos.terraindiffusionmc.catalog.BiomePalette;
+import com.github.xandergos.terraindiffusionmc.catalog.CoherentBiomeSelector;
 import java.util.function.Consumer;
 
 // Rule-based biome classifier port of _classify_biome in minecraft_api.py
@@ -102,10 +105,26 @@ public final class BiomeClassifier {
                                     BiomeCatalog.Snapshot<?> catalog,
                                     Consumer<TerralithCatalogBridge.Diagnostics> diagnostics,
                                     BiomeDebugTrace.Tile debugTile) {
+        return classifyInternal(elev,climate,i0,j0,elevPadded,H,W,pixelSizeM,snowLayersOut,riverMask,catalog,diagnostics,debugTile,null,null);
+    }
+    public static <B> int[] classifyGeneric(float[] elev,float[] climate,int i0,int j0,float[] elevPadded,
+            int H,int W,float pixelSizeM,byte[] snowLayersOut,boolean[] riverMask,
+            WorldClassificationPublication<B> publication,BiomeDebugTrace.Tile debugTile){
+        if(!publication.policy().generic())throw new IllegalArgumentException("generic dispatch requires saved generic policy");
+        int[] indexes=new int[H*W];
+        classifyInternal(elev,climate,i0,j0,elevPadded,H,W,pixelSizeM,snowLayersOut,riverMask,publication.catalog(),ignored->{},debugTile,publication,indexes);
+        return indexes;
+    }
+    private static <B> short[] classifyInternal(float[] elev,float[] climate,int i0,int j0,float[] elevPadded,
+            int H,int W,float pixelSizeM,byte[] snowLayersOut,boolean[] riverMask,BiomeCatalog.Snapshot<?> catalog,
+            Consumer<TerralithCatalogBridge.Diagnostics> diagnostics,BiomeDebugTrace.Tile debugTile,
+            WorldClassificationPublication<B> publication,int[] indexes){
+        GenericBiomeRoutes<B> routes=publication==null?null:new GenericBiomeRoutes<>(publication.palette());
         short[] out = new short[H * W];
         for (int i = 0; i < H * W; i++) out[i] = PLAINS;
 
         if (climate == null || climate.length < 4 * H * W) {
+            if(indexes!=null)throw new IllegalStateException("generic classification requires precise climate");
             if (debugTile != null) debugTile.missingClimate(pixelSizeM);
             return out;
         }
@@ -137,10 +156,15 @@ public final class BiomeClassifier {
 
         // Process per-pixel
         TerrainSample sample = new TerrainSample();
-        boolean useTerralith = TerralithCompat.isActive();
+        boolean useTerralith = publication==null ? TerralithCompat.isActive() : routes.terralith();
+        CoherentBiomeSelector<BiomePalette.Entry<B>> selector=publication==null?null:publication.selector();
+        CoherentBiomeSelector<BiomePalette.Entry<B>>.Scratch scratch=selector==null?null:selector.canonicalScratch(j0,i0,W);
+        if(publication!=null && (H!=W || (W&(W-1))!=0))throw new IllegalArgumentException("generic classifier requires bounded canonical square");
+        MutableSampleCatalogContext genericContext=publication==null?null:new MutableSampleCatalogContext();
+        TransitionalRiverProgram rivers=publication!=null && catalog.active()?new TransitionalRiverProgram(catalog):null;
         // Failed initial loading remains the explicitly documented legacy path.
         // A valid empty catalog is active and therefore cannot enable old gates.
-        TerralithCatalogBridge bridge = useTerralith && catalog.active() ? new TerralithCatalogBridge(catalog) : null;
+        TerralithCatalogBridge bridge = publication==null && useTerralith && catalog.active() ? new TerralithCatalogBridge(catalog) : null;
 
         for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
@@ -269,7 +293,32 @@ public final class BiomeClassifier {
                 if (bridge != null) bridge.observeSelection(selection);
                 String route = null, fallback = "none";
                 short biome;
-                if (!sample.isOcean && riverMask != null && riverMask[idx]) {
+                BiomeCatalog.Candidate<BiomePalette.Entry<B>> genericChoice=null;
+                BiomeCatalog.Entry riverChoice=null;
+                CoherentBiomeSelector.Decision genericDecision=null;
+                if(publication!=null) {
+                    boolean wet=riverMask!=null && riverMask[idx];
+                    genericContext.update(sample,wet);
+                    if(!sample.isOcean && wet) {
+                        biome=sample.temp<=-3f?FROZEN_RIVER:RIVER;
+                        if(sample.temp>-3f && rivers!=null) {
+                            riverChoice=rivers.choose(genericContext);
+                            if(riverChoice!=null)biome=TerralithBiomeIds.WARM_RIVER;
+                        }else if(sample.temp>-3f && useTerralith && sample.temp>=WARM_RIVER_MIN_C)biome=TerralithBiomeIds.WARM_RIVER;
+                        indexes[idx]=routes.index(biome);
+                        if(traced)route=sample.temp<=-3f?"frozen-river":rivers!=null?"generic-transitional-warm-river":"generic-inactive-legacy-river";
+                    }else if(selector!=null) {
+                        genericChoice=selector.select(genericContext,sample.worldX,sample.worldZ,scratch);
+                        biome=genericChoice==null?classifyVanilla(sample):0;
+                        indexes[idx]=genericChoice==null?routes.index(biome):genericChoice.biome().index();
+                        if(traced){route="generic-cellular";genericDecision=scratch.decision();if(genericChoice==null)fallback=scratch.noMatch()+" -> existing fallback palette";}
+                    }else {
+                        biome=useTerralith?TerralithClassifier.pick(sample):TerralithClassifier.NONE;
+                        if(biome==TerralithClassifier.NONE)biome=classifyVanilla(sample);
+                        indexes[idx]=routes.index(biome);
+                        if(traced)route="generic-inactive-legacy";
+                    }
+                } else if (!sample.isOcean && riverMask != null && riverMask[idx]) {
                     biome = riverBiome(sample, useTerralith, bridge);
                     if (traced) {
                         route = sample.temp <= -3f ? "frozen-river" : bridge != null ? "bridge-warm-river" : "legacy-river";
@@ -292,7 +341,11 @@ public final class BiomeClassifier {
                 if (snowLayersOut != null) {
                     snowLayersOut[idx] = snowDepthFor(sample);
                 }
-                if (traced) debugTile.capture(sample,riverMask != null && riverMask[idx],pixelSizeM,
+                if(traced && publication!=null)debugTile.captureGeneric(sample,riverMask!=null && riverMask[idx],pixelSizeM,
+                    route,indexes[idx],publication.palette().at(indexes[idx]).id(),snowLayersOut==null?-1:Byte.toUnsignedInt(snowLayersOut[idx]),
+                    genericChoice==null?(riverChoice==null?null:riverChoice.id()):genericChoice.definition().id(),fallback,
+                    publication.policy().spacingBlocks(),publication.palette().id(),genericDecision);
+                if (traced && publication==null) debugTile.capture(sample,riverMask != null && riverMask[idx],pixelSizeM,
                     bridge != null ? "legacy-bridge" : useTerralith ? "legacy" : "existing-fallback-palette",
                     route,biome,snowLayersOut == null ? -1 : Byte.toUnsignedInt(snowLayersOut[idx]),selection,fallback);
             }

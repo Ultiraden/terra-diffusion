@@ -5,6 +5,11 @@ import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.HeightmapData;
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.DataResult;
+import com.github.xandergos.terraindiffusionmc.catalog.SavedSelectionPolicy;
+import com.github.xandergos.terraindiffusionmc.catalog.BiomePalette;
+import com.github.xandergos.terraindiffusionmc.catalog.minecraft.SavedSelectionPolicyCodec;
+import com.github.xandergos.terraindiffusionmc.pipeline.GenericBiomeRoutes;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -44,18 +49,45 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     private static final ResourceKey<Biome> TAIGA_SPARSE = ResourceKey.create(Registries.BIOME, ResourceLocation.fromNamespaceAndPath("terrain-diffusion-mc", "taiga_sparse"));
     private static final ResourceKey<Biome> SNOWY_TAIGA_SPARSE = ResourceKey.create(Registries.BIOME, ResourceLocation.fromNamespaceAndPath("terrain-diffusion-mc", "snowy_taiga_sparse"));
 
-    public static final MapCodec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.mapCodec((instance) ->
+    private record SavedFields(HolderGetter<Biome> lookup,Optional<SavedSelectionPolicy> policy) {}
+    private static final MapCodec<SavedFields> SAVED_FIELDS = RecordCodecBuilder.mapCodec((instance) ->
             instance.group(
-                    RegistryOps.retrieveGetter(Registries.BIOME)
-            ).apply(instance, instance.stable(TerrainDiffusionBiomeSource::new)));
+                    RegistryOps.retrieveGetter(Registries.BIOME),
+                    SavedSelectionPolicyCodec.CODEC.optionalFieldOf("selection_policy").forGetter(SavedFields::policy)
+            ).apply(instance, instance.stable(SavedFields::new)));
+    public static final MapCodec<TerrainDiffusionBiomeSource> CODEC=SAVED_FIELDS.flatXmap(fields -> {
+        try { return DataResult.success(new TerrainDiffusionBiomeSource(fields.lookup(),fields.policy().orElseGet(SavedSelectionPolicy::legacy))); }
+        catch(IllegalArgumentException error) { return DataResult.error(error::getMessage); }
+    },source -> DataResult.success(new SavedFields(source.biomeLookup,
+        source.selectionPolicy.generic()?Optional.of(source.selectionPolicy):Optional.empty())));
 
-    private HolderGetter<Biome> biomeLookup;
+    private final HolderGetter<Biome> biomeLookup;
+    private final SavedSelectionPolicy selectionPolicy;
+    private final BiomePalette<Holder<Biome>> genericPalette;
+    private final GenericBiomeRoutes<Holder<Biome>> genericRoutes;
     private Map<Short, Holder<Biome>> biomeIdMap = null;
     private Holder<Biome>[] caveBiomes = null;
     private boolean caveTerralith = false;
 
     public TerrainDiffusionBiomeSource(HolderGetter<Biome> biomeLookup) {
-        this.biomeLookup = biomeLookup;
+        this(biomeLookup,SavedSelectionPolicy.legacy());
+    }
+
+    public TerrainDiffusionBiomeSource(HolderGetter<Biome> lookup,SavedSelectionPolicy policy) {
+        this.biomeLookup=lookup; this.selectionPolicy=policy;
+        genericPalette=policy.generic() ? new BiomePalette<>(policy.possibleBiomeIds(),id ->
+            lookup.get(ResourceKey.create(Registries.BIOME,ResourceLocation.parse(id))).map(h -> (Holder<Biome>)h)) : null;
+        genericRoutes=policy.generic() ? new GenericBiomeRoutes<>(genericPalette) : null;
+        if(policy.generic())resolveGenericCaves();
+    }
+    public SavedSelectionPolicy selectionPolicy(){return selectionPolicy;}
+    public BiomePalette<Holder<Biome>> genericPalette(){return genericPalette;}
+    public boolean genericTerralith(){return genericRoutes!=null && genericRoutes.terralith();}
+    @SuppressWarnings("unchecked")
+    private void resolveGenericCaves(){
+        caveBiomes=new Holder[CaveBiomes.IDS.length];
+        for(int i=0;i<CaveBiomes.IDS.length;i++)caveBiomes[i]=genericPalette.find(CaveBiomes.IDS[i]).map(BiomePalette.Entry::biome).orElse(null);
+        caveTerralith=java.util.stream.IntStream.range(3,caveBiomes.length).allMatch(i -> caveBiomes[i]!=null);
     }
 
     @Override
@@ -64,6 +96,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     }
 
     private void requireBiomeIdMap() {
+        if (selectionPolicy.generic()) return;
         if (biomeIdMap != null) {
             return;
         }
@@ -186,6 +219,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
 
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
+        if(selectionPolicy.generic())return genericPalette.entries().stream().map(BiomePalette.Entry::biome);
         requireBiomeIdMap();
         return Stream.concat(biomeIdMap.values().stream(),
                 java.util.Arrays.stream(caveBiomes).filter(java.util.Objects::nonNull)).distinct();
@@ -195,6 +229,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler noise) {
         requireBiomeIdMap();
         Holder<Biome> found = biomeAt(x, y, z, true);
+        if(selectionPolicy.generic() && found==null)throw new IllegalStateException("generic tile returned no owning biome");
         return found != null ? found : biomeIdMap.get((short) 1);
     }
 
@@ -216,7 +251,14 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
                 ? LocalTerrainProvider.getInstance()
                         .fetchHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX)
                 : LocalTerrainProvider.peekHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX);
-        if (data == null || data.biomeIds == null) return null;
+        if (data == null) return null;
+        if(selectionPolicy.generic()) {
+            if(data.classification==null || !data.classification.policy().generic() || data.biomeIndexes==null)
+                throw new IllegalStateException("legacy tile encountered by generic owning source");
+            if(data.classification.palette()!=genericPalette)
+                throw new IllegalStateException("tile palette belongs to a different source session");
+        } else if(data.biomeIndexes!=null)throw new IllegalStateException("generic tile encountered by legacy source");
+        else if(data.biomeIds==null)return null;
 
         int localX = Math.max(0, Math.min(data.width  - 1, blockX - blockStartX));
         int localZ = Math.max(0, Math.min(data.height - 1, blockZ - blockStartZ));
@@ -226,6 +268,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
                 surfaceY, QuartPos.toBlock(y));
         if (cave != null) return cave;
 
+        if(selectionPolicy.generic())return (Holder<Biome>) data.classification.palette().at(data.biomeIndexes[localZ][localX]).biome();
         return biomeIdMap.get(data.biomeIds[localZ][localX]);
     }
 

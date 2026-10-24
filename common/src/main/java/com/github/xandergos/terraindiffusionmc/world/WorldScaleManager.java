@@ -35,6 +35,7 @@ public final class WorldScaleManager {
     // Updates world scale for the currently loaded world and persists it immediately
     public static void setCurrentScale(ServerLevel serverWorld, int configuredScale) {
         int clampedScale = clampScale(configuredScale);
+        com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.verifyOwningProvider(serverWorld.getSeed(),clampedScale);
 
         WorldScaleSettingsState worldScaleSettingsState = serverWorld.getDataStorage()
                 .computeIfAbsent(WorldScaleSettingsState.TYPE, "terrain_diffusion_world_settings");

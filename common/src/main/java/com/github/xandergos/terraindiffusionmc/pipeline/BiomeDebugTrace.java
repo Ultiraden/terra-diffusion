@@ -49,11 +49,13 @@ public final class BiomeDebugTrace {
                 s.cool,s.temperate,s.warm,s.hot);
         }
     }
+    public record GenericSelection(int paletteIndex,String paletteId,int spacingWorldBlocks,
+        com.github.xandergos.terraindiffusionmc.catalog.CoherentBiomeSelector.Decision decision) {}
     public record Observation(TileKey tile, Position position, float pixelSizeM, String catalogId,
         boolean catalogActive, int catalogEntries, Sample sample, SampleCatalogContext context,
         boolean wet, String policy, String route, short surfaceId, String surfaceBiome,
         int snowDepth, String selectedEntry, String fallback, List<String> gates,
-        List<EntryResult> entries, int eligibleCount, String unavailable, int bytes) {
+        List<EntryResult> entries, int eligibleCount, String unavailable, int bytes,GenericSelection genericSelection) {
         public Observation { gates = List.copyOf(gates); entries = List.copyOf(entries); }
     }
 
@@ -105,7 +107,7 @@ public final class BiomeDebugTrace {
     private static Observation unavailable(Observation r,String reason) {
         return new Observation(r.tile(),r.position(),r.pixelSizeM(),r.catalogId(),r.catalogActive(),
             r.catalogEntries(),null,null,r.wet(),r.policy(),r.route(),r.surfaceId(),r.surfaceBiome(),
-            r.snowDepth(),null,r.fallback(),List.of(),List.of(),0,reason,512);
+            r.snowDepth(),null,r.fallback(),List.of(),List.of(),0,reason,512,r.genericSelection());
     }
 
     /** Scoped to one normal tile task. Retains the captured catalog only until the task completes. */
@@ -125,12 +127,24 @@ public final class BiomeDebugTrace {
         public void missingClimate(float pixelSizeM) {
             for (Position p:points) completed.put(p,new Observation(key,p,pixelSizeM,catalogId,catalog.active(),
                 catalog.entries().size(),null,null,false,"default","missing-climate",(short)1,"minecraft:plains",
-                0,null,"missing climate defaults to plains",List.of(),List.of(),0,"precise climate unavailable",512));
+                0,null,"missing climate defaults to plains",List.of(),List.of(),0,"precise climate unavailable",512,null));
         }
         public void capture(TerrainSample s, boolean wet, float pixelSizeM, String policy,String route,
             short id,int snowDepth, Selection selection,String fallback) {
+            captureObserved(s,wet,pixelSizeM,policy,route,id,biomeName(id),snowDepth,selection,
+                selection==null?null:selection.selectedEntry,fallback,null);
+        }
+        public void captureGeneric(TerrainSample s,boolean wet,float pixelSizeM,String route,int index,String biome,
+                int snowDepth,String entry,String fallback,int spacing,String palette,
+                com.github.xandergos.terraindiffusionmc.catalog.CoherentBiomeSelector.Decision decision){
+            captureObserved(s,wet,pixelSizeM,"generic-cellular",route,(short)0,biome,snowDepth,null,entry,fallback,
+                new GenericSelection(index,palette,spacing,decision));
+        }
+        private void captureObserved(TerrainSample s,boolean wet,float pixelSizeM,String policy,String route,
+                short id,String biome,int snowDepth,Selection selection,String selectedEntry,String fallback,GenericSelection generic){
             Sample sample=Sample.from(s); SampleCatalogContext context=SampleCatalogContext.from(s,wet);
             List<EntryResult> entries=new ArrayList<>(); int eligible=0; long bytes=2048;
+            if(generic!=null && selectedEntry!=null)bytes+=stringBytes(selectedEntry);
             String reason="";
             if (selection!=null && selection.budgetExceeded) reason="selection trace budget exceeded";
             if (selection!=null) for (String gate:selection.gates) bytes+=stringBytes(gate);
@@ -149,9 +163,9 @@ public final class BiomeDebugTrace {
                 entries.add(entry); if(entry.eligible()) eligible++;
             }
             Observation result=new Observation(key,new Position(s.worldX,s.worldZ),pixelSizeM,catalogId,catalog.active(),
-                catalog.entries().size(),sample,context,wet,policy,route,id,biomeName(id),snowDepth,
-                selection==null ? null : selection.selectedEntry,fallback,selection==null ? List.of() : selection.gates,
-                entries,eligible,reason,(int)Math.min(bytes,MAX_RECORD_BYTES));
+                catalog.entries().size(),sample,context,wet,policy,route,id,biome,snowDepth,
+                selectedEntry,fallback,selection==null ? List.of() : selection.gates,
+                entries,eligible,reason,(int)Math.min(bytes,MAX_RECORD_BYTES),generic);
             if(reason.isEmpty() && completedBytes+result.bytes()>MAX_TOTAL_BYTES - MAX_POSITIONS*512)
                 reason="tile trace budget exceeded";
             result=reason.isEmpty() ? result : unavailable(result,reason);

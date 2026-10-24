@@ -39,6 +39,14 @@ sourceSets {
             exclude 'com/github/xandergos/terraindiffusionmc/mixin/client/**'
         }
     }
+    test {
+        java {
+            // The pack's test-generic-classifier.py supplies the pinned
+            // AcceptedBiomeClassifier oracle and runs this differential fixture.
+            // It is not a standalone Gradle/JUnit test source.
+            exclude 'com/github/xandergos/terraindiffusionmc/pipeline/GenericClassifierIntegrationTest.java'
+        }
+    }
     client {
         java.srcDir 'src/client/java'
         resources.srcDir 'src/client/resources'
