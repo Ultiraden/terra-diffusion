@@ -94,7 +94,33 @@ public final class GenericClassifierIntegrationTest {
         int[] indexes=BiomeClassifier.classifyGeneric(elev,climate,0,0,halo,32,32,15f,snow,wet,publication,null);
         for(int index:indexes)check(publication.palette().at(index).id().equals(holder),"arbitrary target has no native short assumption");
     }
+    private static void strictRouting(){
+        List<String> pool=ids();String target="minecraft:desert".intern();
+        var definition=new Entry("fixture:strict",target,Set.of(),Set.of(Environment.land,Environment.ocean,Environment.river),Map.of(),Map.of(),new Selection(1,0,false));
+        var controller=new RegistryClassificationController<String>();
+        var palette=new BiomePalette<String>(pool,id->Optional.of(id.intern()));
+        check(controller.commit(new Snapshot<>(true,List.of(new Candidate<>(definition,target))),true).accepted(),"strict fixture metadata");
+        var handle=controller.bind(77,1,SavedSelectionPolicy.catalogOnly(1024,pool),palette);
+        int n=16*16;float[] elevation=new float[n],climate=new float[4*n],halo=new float[18*18];boolean[] wet=new boolean[n];
+        Arrays.fill(climate,-20f);Arrays.fill(wet,true);
+        // A desert fixture deliberately checks dispatch, not sensible product ecology:
+        // even the frozen/wet path must use the explicit admitted catalog choice.
+        int[] result=BiomeClassifier.classifyGeneric(elevation,climate,0,0,halo,16,16,30f,new byte[n],wet,handle.get(),null);
+        for(int index:result)check(palette.at(index).id().equals(target),"frozen wet route cannot bypass catalog");
+        Arrays.fill(elevation,-100f);result=BiomeClassifier.classifyGeneric(elevation,climate,0,0,halo,16,16,30f,new byte[n],wet,handle.get(),null);
+        for(int index:result)check(palette.at(index).id().equals(target),"ocean route cannot bypass catalog");
+        var inactiveProposal=controller.commit(new Snapshot<>(true,List.of()),false);check(!inactiveProposal.accepted(),"strict disable rejected");
+        check(controller.commit(new Snapshot<>(true,List.of()),true).accepted(),"explicit empty active metadata accepted as empty");
+        try{BiomeClassifier.classifyGeneric(elevation,climate,0,0,halo,16,16,30f,new byte[n],wet,handle.get(),null);throw new AssertionError("empty strict catalog silently substituted a biome");}
+        catch(IllegalStateException expected){check(expected.getMessage().contains("seed=77")&&expected.getMessage().contains("no substitute biome"),"no-match failure identifies owning world and contract");}
+        var zero=new Entry("fixture:zero",target,Set.of(),Set.of(Environment.ocean),Map.of(),Map.of(),new Selection(0,0,false));
+        check(controller.commit(new Snapshot<>(true,List.of(new Candidate<>(zero,target))),true).accepted(),"zero-weight valid metadata");
+        try{BiomeClassifier.classifyGeneric(elevation,climate,0,0,halo,16,16,30f,new byte[n],wet,handle.get(),null);throw new AssertionError("zero weight silently substituted a biome");}
+        catch(IllegalStateException expected){check(expected.getMessage().contains("NO_ELIGIBLE_POSITIVE_CANDIDATE"),"zero-weight no match fails explicitly");}
+        controller.release(handle);
+    }
     public static void main(String[] args)throws Exception{
+        strictRouting();
         check(ids().size()==116,"approved fixed pool exact116");grids(load(Path.of(args[0])));arbitrary();
         System.out.println("PASS GenericClassifierIntegrationTest "+checks+" checks; pure provided arrays, no Minecraft/ONNX");
     }

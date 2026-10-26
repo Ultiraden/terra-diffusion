@@ -80,6 +80,17 @@ public final class WorldClassificationPublicationTest {
         });reader.start();for(int i=0;i<1000;i++)check(early.commit((i&1)==0?first:second,(i&3)!=0).accepted(),"concurrent in-pool commit");reader.join();check(failure.get()==null,"metadata and all session programs read atomically");
         early.release(handle);early.release(legacy);check(early.state().worlds().isEmpty(),"release clears source tokens only");
         check(early.state().catalog().active(),"ordinary metadata remains after source release");
+        var strictController=new RegistryClassificationController<Object>();
+        var strictPolicy=SavedSelectionPolicy.catalogOnly(1024,ids);
+        check(strictPolicy.generic()&&strictPolicy.catalogOnly()&&!policy.catalogOnly(),"strict saved routing is distinct from compatibility");
+        rejects(()->strictController.bind(2,1,strictPolicy,palette),"initial inactive strict catalog cannot fall back");
+        check(strictController.state().worlds().isEmpty(),"failed strict bind leaves no source token");
+        check(strictController.commit(first,true).accepted(),"valid strict metadata prepared");
+        var strictHandle=strictController.bind(2,1,strictPolicy,palette);var strictState=strictController.state();
+        check(!strictController.commit(first,false).accepted(),"strict world rejects disabled proposal");
+        check(strictController.state()==strictState&&strictHandle.get().genericActive(),"disable rejection retains one whole active state");
+        rejects(()->new SavedSelectionPolicy(SavedSelectionPolicy.Mode.LEGACY,"",1024,List.of(),SavedSelectionPolicy.Routing.CATALOG_ONLY),"strict routing requires saved generic configuration");
+        strictController.release(strictHandle);check(strictController.commit(first,false).accepted(),"disable remains accepted for compatible worlds without strict bindings");
         System.out.println("PASS "+checks+" owning publication checks; no Minecraft/provider/native execution");
     }
 }

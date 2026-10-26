@@ -14,6 +14,7 @@ public record WorldClassificationPublication<B>(long worldSeed,int worldScale,Sa
         Objects.requireNonNull(policy);Objects.requireNonNull(rawCatalog);Objects.requireNonNull(catalog);diagnostics=List.copyOf(diagnostics);
         if(policy.generic()&&palette==null)throw new IllegalArgumentException("generic publication requires an owning palette");
         if(policy.generic()&&catalog.active()&&selector==null)throw new IllegalArgumentException("active generic publication requires a compiled selector");
+        if(policy.catalogOnly()&&!catalog.active())throw new IllegalArgumentException("catalog-only source requires an active enabled catalog");
         if(!policy.generic()&&selector!=null)throw new IllegalArgumentException("legacy publication cannot have a generic selector");
     }
     public boolean genericActive(){return policy.generic()&&catalog.active();}
@@ -24,6 +25,7 @@ public record WorldClassificationPublication<B>(long worldSeed,int worldScale,Sa
     static <B> WorldClassificationPublication<B> build(long seed,int scale,SavedSelectionPolicy policy,
             BiomePalette<B> palette,Snapshot<B> raw,boolean enabled,long revision,boolean rejectInvalid){
         List<String> errors=new ArrayList<>();List<Candidate<BiomePalette.Entry<B>>> indexed=new ArrayList<>();
+        if(policy.catalogOnly()&&(!raw.active()||!enabled))errors.add("catalog-only source requires an active enabled catalog; no compatibility fallback");
         if(policy.generic()){
             if(palette==null||!palette.entries().stream().map(BiomePalette.Entry::id).toList().equals(policy.possibleBiomeIds()))
                 throw new IllegalArgumentException("saved policy/palette mismatch");
@@ -35,7 +37,7 @@ public record WorldClassificationPublication<B>(long worldSeed,int worldScale,Sa
             }
         }
         errors.sort(String::compareTo);
-        if(rejectInvalid&&!errors.isEmpty())throw new IllegalArgumentException(String.join("; ",errors));
+        if((rejectInvalid||policy.catalogOnly())&&!errors.isEmpty())throw new IllegalArgumentException(String.join("; ",errors));
         Snapshot<B> classification=enabled&&errors.isEmpty()?raw:new Snapshot<>(false,List.of());
         CoherentBiomeSelector<BiomePalette.Entry<B>> selector=policy.generic()&&classification.active()
                 ?new CoherentBiomeSelector<>(new Snapshot<>(true,indexed),seed,new CoherentBiomeSelector.Config(policy.spacingBlocks())):null;
