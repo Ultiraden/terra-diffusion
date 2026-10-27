@@ -212,7 +212,7 @@ public final class BiomeDebugTrace {
             entry.selection().priority(),entry.selection().fallback(),reasons);
     }
     private static long stringBytes(String value) { return 40L+2L*value.length(); }
-    private static String digest(BiomeCatalog.Snapshot<?> catalog) {
+    static String digest(BiomeCatalog.Snapshot<?> catalog) {
         try {
             MessageDigest digest=MessageDigest.getInstance("SHA-256");
             DigestText text=new DigestText(digest);

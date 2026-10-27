@@ -161,7 +161,8 @@ public final class BiomeClassifier {
         CoherentBiomeSelector<BiomePalette.Entry<B>>.Scratch scratch=selector==null?null:selector.canonicalScratch(j0,i0,W);
         if(publication!=null && (H!=W || (W&(W-1))!=0))throw new IllegalArgumentException("generic classifier requires bounded canonical square");
         MutableSampleCatalogContext genericContext=publication==null?null:new MutableSampleCatalogContext();
-        TransitionalRiverProgram rivers=publication!=null && catalog.active()?new TransitionalRiverProgram(catalog):null;
+        boolean catalogOnly=publication!=null&&publication.policy().catalogOnly();
+        TransitionalRiverProgram rivers=publication!=null && !catalogOnly && catalog.active()?new TransitionalRiverProgram(catalog):null;
         // Failed initial loading remains the explicitly documented legacy path.
         // A valid empty catalog is active and therefore cannot enable old gates.
         TerralithCatalogBridge bridge = publication==null && useTerralith && catalog.active() ? new TerralithCatalogBridge(catalog) : null;
@@ -299,7 +300,14 @@ public final class BiomeClassifier {
                 if(publication!=null) {
                     boolean wet=riverMask!=null && riverMask[idx];
                     genericContext.update(sample,wet);
-                    if(!sample.isOcean && wet) {
+                    if(catalogOnly) {
+                        genericChoice=selector.select(genericContext,sample.worldX,sample.worldZ,scratch);
+                        if(genericChoice==null)throw new IllegalStateException("Catalog-only biome selection failed: seed="+publication.worldSeed()
+                            +" scale="+publication.worldScale()+" column="+sample.worldX+","+sample.worldZ+" revision="+publication.revision()
+                            +" catalog="+BiomeDebugTrace.digest(catalog)+" environment="+genericContext.environment()+" noMatch="+scratch.noMatch()+"; no substitute biome");
+                        biome=0;indexes[idx]=genericChoice.biome().index();
+                        if(traced){route="catalog-only-cellular";genericDecision=scratch.decision();}
+                    }else if(!sample.isOcean && wet) {
                         biome=sample.temp<=-3f?FROZEN_RIVER:RIVER;
                         if(sample.temp>-3f && rivers!=null) {
                             riverChoice=rivers.choose(genericContext);
