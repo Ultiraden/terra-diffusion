@@ -5,6 +5,7 @@ import com.github.xandergos.terraindiffusionmc.mixin.NoiseBasedChunkGeneratorAcc
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
@@ -46,9 +47,15 @@ public final class UnifiedSurfaceRules {
                     ()->new IllegalStateException("Unified surface bridge requires the owning Overworld rule"));
             parts.add(guard(source,Set.of("minecraft","terralith"),imported.surfaceRule()));
         }
-        // Provider rules cannot claim unrelated identities. TD's own rule is the
-        // final material fallback; its density/router/fluid/height remain untouched.
-        parts.add(current.surfaceRule());
+        // Saved direct noise settings may contain an earlier merged tree.
+        // Rebase only the surface on the owning registered TD material rule, so
+        // reopening a world cannot recursively import its previous bridge.
+        var tdKey=ResourceKey.create(Registries.NOISE_SETTINGS,
+            ResourceLocation.fromNamespaceAndPath("terrain-diffusion-mc","terrain_diffusion"));
+        var td=world.registryAccess().registryOrThrow(Registries.NOISE_SETTINGS)
+            .getOptional(tdKey).orElseThrow(
+                ()->new IllegalStateException("Unified surface bridge requires registered TD material rules"));
+        parts.add(td.surfaceRule());
         var merged=new NoiseGeneratorSettings(current.noiseSettings(),current.defaultBlock(),
             current.defaultFluid(),current.noiseRouter(),
             SurfaceRules.sequence(parts.toArray(SurfaceRules.RuleSource[]::new)),

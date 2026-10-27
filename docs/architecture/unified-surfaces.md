@@ -13,6 +13,9 @@ by the owning source's possible biome keys in that provider namespace. A missing
 required adapter fails explicitly. Vanilla/Terralith's imported Overworld tree is
 separately guarded to Minecraft/Terralith keys. The existing TD surface rule is
 the final material fallback; no biome-selector fallback entry is introduced.
+The fallback is read from the owning registered TD noise-settings resource,
+because direct saved settings can already contain an earlier merged bridge.
+Surface imports must not accumulate on world reopen.
 
 Only the surface rule in NoiseGeneratorSettings is replaced. Noise settings,
 density router, default block/fluid, spawn target, sea level and generation flags
