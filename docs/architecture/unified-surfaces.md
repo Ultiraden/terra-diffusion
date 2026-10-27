@@ -28,8 +28,8 @@ hook adds column geometry in sugi/stratified/dune biomes, so it is disabled to
 preserve TD terrain. Authored NS material rules remain enabled. The pack owns
 the explicit configuration fragment; existing profiles are not auto-configured.
 
-Expanded201 worlds also require the explicit TD/Spawn injector compatibility
-datapack from issue114, introduced with TD_m1.9. It keeps the owning source
+Expanded 201 worlds also require the explicit TD/Spawn injector compatibility
+datapack from issue 114, introduced with TD_m1.9. It keeps the owning source
 direct and avoids post-catalog biome substitution. The generic owning source is
 initialized before upstream Spawn level-load queries. This bridge does not
 change Spawn discovery, structures, biome repair or M2 island lifecycles.
@@ -40,8 +40,8 @@ ant_gardens and supplies the shared ten-ID contracts; M2 #18 owns actual
 ocean/coast placement and the six structure-owned island/tide-pool identities.
 Importing a surface rule is not evidence that physical coastal placement works.
 
-The approved fresh M1 pool is201 possible IDs: accepted140 + all51 NS + all10
-Spawn. Namespace dispatch therefore has51 NS keys,10 Spawn keys and137
+The approved fresh M1 pool is 201 possible IDs: accepted 140 + all 51 NS + all 10
+Spawn. Namespace dispatch therefore has 51 NS keys, 10 Spawn keys and 137
 Minecraft/Terralith keys, followed by the registered TD material rule. The
 remaining three TD identities use that material rule. This source change does
 not install a preset or expand an existing world's saved pool; provider issues
@@ -53,7 +53,7 @@ comparisons, high terrain at both scales, public-release Terralith comparisons,
 old-pool/optional-absence controls and natural reopen checks. Private forced
 catalog targets isolate material dispatch without replacing density or placing
 features manually; they are not production climate/coast/island acceptance.
-The pack's issue12 evidence records fixture inputs and exact scope.
+The pack's issue 12 evidence records fixture inputs and exact scope.
 
 Build/release gates include strict common checks and both NeoForge variants,
 clean source-archive byte reproduction, complete source/pack diff review,
