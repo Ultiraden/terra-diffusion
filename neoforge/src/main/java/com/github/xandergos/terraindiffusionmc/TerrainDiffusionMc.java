@@ -3,6 +3,7 @@ package com.github.xandergos.terraindiffusionmc;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
@@ -18,6 +19,7 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.fml.ModList;
 import com.github.xandergos.terraindiffusionmc.catalog.minecraft.BiomeCatalogRuntime;
 import com.github.xandergos.terraindiffusionmc.debug.BiomeDebugCommand;
+import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +37,7 @@ public class TerrainDiffusionMc {
 
         NeoForge.EVENT_BUS.addListener(this::onServerStarting);
         NeoForge.EVENT_BUS.addListener(this::onServerAboutToStart);
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, this::onGenericLevelLoad);
         NeoForge.EVENT_BUS.addListener(this::onLevelLoad);
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
@@ -60,13 +63,31 @@ public class TerrainDiffusionMc {
         TerrainDiffusionLifecycle.onServerAboutToStart();
     }
 
+    private static boolean genericTdWorld(ServerLevel world) {
+        return world.getChunkSource().getGenerator().getBiomeSource()
+            instanceof TerrainDiffusionBiomeSource source && source.selectionPolicy().generic();
+    }
+
+    private void onGenericLevelLoad(LevelEvent.Load event) {
+        if (event.getLevel() instanceof ServerLevel world && genericTdWorld(world)) {
+            // Provider consumers can query biomes during NORMAL level-load events.
+            // Bind this direct generic owner before those queries can create tiles.
+            initializeWorld(world);
+        }
+    }
+
     private void onLevelLoad(LevelEvent.Load event) {
-        if (event.getLevel() instanceof ServerLevel world) {
+        if (event.getLevel() instanceof ServerLevel world && !genericTdWorld(world)) {
+            // Preserve the accepted ordering for legacy and non-TD worlds.
+            initializeWorld(world);
+        }
+    }
+
+    private static void initializeWorld(ServerLevel world) {
             // The registry-owned source exposes legacy unless this world's
             // successfully published datapack metadata explicitly opts in.
             TerrainDiffusionLifecycle.onWorldLoad(world,BiomeCatalogRuntime.classificationSource(world.registryAccess()),
                 (source,seed,scale) -> BiomeCatalogRuntime.bindWorld(world.registryAccess(),source,seed,scale));
-        }
     }
 
     private void onServerStopping(ServerStoppingEvent event) {
