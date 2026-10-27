@@ -1,4 +1,4 @@
-# Catalog-only saved routing — M1 issue 9 candidate
+# Catalog-only saved routing — M1 issue 9
 
 The pack owns 46 Vanilla surface targets in a fixed 140-holder fresh-world pool, with initial Vanilla normal weight 1 / priority 0 alongside unchanged Terralith entries. The user approved this design and the measured three-seed, Scale-1/2 distribution/appearance on 2026-10-26. The catalog adds zero fallback entries; an uncovered context produces an explicit error. Existing saved policies retain their accepted behavior. Delivery identities and full evidence are recorded by the paired [pack issue](https://github.com/Ultiraden/ulti-world/issues/9).
 
