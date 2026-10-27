@@ -1,7 +1,7 @@
-# Issue 12 candidate: owning provider surfaces
+# Owning provider surface rules
 
-This branch is a candidate. No native surface/material acceptance or release is
-claimed by this design note.
+Issue12 separates provider surface materials from catalog eligibility and biome
+selection. The owning TD source and density pipeline remain authoritative.
 
 Existing legacy, compatibility-routing and accepted 140-biome catalog-only
 palettes retain TerralithSurfaceRules unchanged. UnifiedSurfaceRules activates
@@ -22,9 +22,17 @@ density router, default block/fluid, spawn target, sea level and generation flag
 are carried through. Repeated application is tracked per owning generator.
 This does not repair the separate #70 provider/cache lifecycle findings.
 
-The dedicated fresh TD instance must disable Nature's Spirit's optional
-sugi_and_stratified_pillars common-config hook, which adds column geometry.
-NS material surfaces remain enabled. Existing profiles are not auto-configured.
+The dedicated fresh TD instance must set sugi_and_stratified_pillars=false in
+the misc section of config/natures_spirit-common.toml. The pinned optional
+hook adds column geometry in sugi/stratified/dune biomes, so it is disabled to
+preserve TD terrain. Authored NS material rules remain enabled. The pack owns
+the explicit configuration fragment; existing profiles are not auto-configured.
+
+Expanded201 worlds also require the explicit TD/Spawn injector compatibility
+datapack from issue114, introduced with TD_m1.9. It keeps the owning source
+direct and avoids post-catalog biome substitution. The generic owning source is
+initialized before upstream Spawn level-load queries. This bridge does not
+change Spawn discovery, structures, biome repair or M2 island lifecycles.
 
 Provider identity ownership remains separate: M1 NS selects the approved 49
 inland identities; its two reserved coasts remain inventoried. M1 Spawn selects
@@ -32,8 +40,22 @@ ant_gardens and supplies the shared ten-ID contracts; M2 #18 owns actual
 ocean/coast placement and the six structure-owned island/tide-pool identities.
 Importing a surface rule is not evidence that physical coastal placement works.
 
-Before merge: resolved-rule namespace/idempotence and unchanged density tests;
-normal special-material surfaces at both scales, high-altitude TD terrain,
-Terralith preservation and generic-material fallback; old policy/pool controls;
-optional-provider guards; strict builds, clean artifact reproduction, public
-release verification, complete diff review and pack CI.
+The approved fresh M1 pool is201 possible IDs: accepted140 + all51 NS + all10
+Spawn. Namespace dispatch therefore has51 NS keys,10 Spawn keys and137
+Minecraft/Terralith keys, followed by the registered TD material rule. The
+remaining three TD identities use that material rule. This source change does
+not install a preset or expand an existing world's saved pool; provider issues
+own the pack's explicitly enabled fresh-world delivery.
+
+Acceptance uses actual normal NOISE/SURFACE/FULL generation, independent raw-NBT
+block-state/occupancy/material/biome reconstruction, full resolved authored-rule
+comparisons, high terrain at both scales, public-release Terralith comparisons,
+old-pool/optional-absence controls and natural reopen checks. Private forced
+catalog targets isolate material dispatch without replacing density or placing
+features manually; they are not production climate/coast/island acceptance.
+The pack's issue12 evidence records fixture inputs and exact scope.
+
+Build/release gates include strict common checks and both NeoForge variants,
+clean source-archive byte reproduction, complete source/pack diff review,
+public artifact verification and pack CI. Material fallback is separate from
+biome eligibility: no biome-selector fallback entry is added.
