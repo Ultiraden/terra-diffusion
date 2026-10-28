@@ -12,7 +12,7 @@ import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionDensityFunction;
 import com.github.xandergos.terraindiffusionmc.world.DeepOres;
 import com.github.xandergos.terraindiffusionmc.world.TfmgCompat;
-import com.github.xandergos.terraindiffusionmc.world.TerralithSurfaceRules;
+import com.github.xandergos.terraindiffusionmc.world.UnifiedSurfaceRules;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
@@ -121,7 +121,7 @@ public final class TerrainDiffusionLifecycle {
             }
             LocalTerrainProvider.init(world.getSeed());
             LocalTerrainProvider.bindCatalogSnapshotSource(catalog);
-            TerralithSurfaceRules.apply(world);
+            UnifiedSurfaceRules.apply(world);
             DeepOres.apply(world);
             TfmgCompat.apply(world);
         }
